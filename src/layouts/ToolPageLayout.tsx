@@ -1,0 +1,50 @@
+import { Heart, Maximize2, Minimize2, ShieldCheck } from 'lucide-react'
+import { useEffect, useState, type CSSProperties } from 'react'
+import type { ToolDefinition } from '../types/tool'
+
+export default function ToolPageLayout({ tool, favorite, onFavorite, onBack }: {
+  tool: ToolDefinition
+  favorite: boolean
+  onFavorite: () => void
+  onBack: () => void
+}) {
+  const [fullPage, setFullPage] = useState(false)
+  const Icon = tool.icon
+  const ToolComponent = tool.component
+
+  useEffect(() => {
+    if (!fullPage) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setFullPage(false)
+    }
+    document.body.classList.add('editor-fullpage-open')
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.classList.remove('editor-fullpage-open')
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [fullPage])
+
+  return (
+    <div className={`tool-page page-enter ${fullPage ? 'is-fullpage' : ''}`} style={{ '--tool-accent': tool.accent } as CSSProperties}>
+      <div className="tool-header">
+        <button className="back-link" onClick={onBack}>← 所有工具</button>
+        <div className="tool-title-line">
+          <span className="large-tool-icon"><Icon size={28} strokeWidth={1.5} /></span>
+          <div><p>{tool.category} / {tool.sourceId ? `IT-Tools · ${tool.sourceId}` : '本地工具'}</p><h1>{tool.name}</h1><span>{tool.description}</span></div>
+          <button className={`favorite-button ${favorite ? 'selected' : ''}`} onClick={onFavorite}>
+            <Heart size={18} fill={favorite ? 'currentColor' : 'none'} />{favorite ? '已收藏' : '收藏'}
+          </button>
+        </div>
+      </div>
+      <div className={`workspace ${tool.workspaceClassName || ''}`}>
+        {tool.fullPage && <button className="fullpage-toggle" onClick={() => setFullPage((value) => !value)} title={fullPage ? '退出全网页模式（Esc）' : '全网页打开'}>
+          {fullPage ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          <span>{fullPage ? '退出全屏' : '全网页'}</span>
+        </button>}
+        <ToolComponent />
+      </div>
+      <div className="tool-note"><ShieldCheck size={17} /><span><strong>本地处理</strong>，输入内容不会发送到服务器。</span></div>
+    </div>
+  )
+}

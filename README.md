@@ -1,9 +1,10 @@
 # Lumen Tools
 
-一个面向开发者的现代本地工具箱。参考 [IT-Tools](https://github.com/CorentinTh/it-tools) 的本地优先理念重新设计，所有转换都在浏览器内完成，不需要登录，也不会上传输入内容。
+Lumen Tools 是一组在浏览器中运行的开发工具，设计参考了 [IT-Tools](https://github.com/CorentinTh/it-tools)。无需登录，输入内容不会上传到服务器。
 
 ## 已有工具
 
+- 图片编辑：无限工作区、原始像素渲染、多选、裁剪、吸附，以及按内容边界复制或导出透明 PNG
 - JSON 格式化、压缩与校验
 - Base64 / URL 编解码
 - JWT 内容解码
@@ -13,8 +14,18 @@
 - 文本统计
 - HEX / RGB / HSL 颜色转换
 - 正则表达式测试
+- HTML / XML / SQL 格式化、SVG 压缩
+- JSON 转 TypeScript、Markdown 转 HTML、文本差异比较
+- 文本清理、大小写转换、密码生成、进制转换、罗马数字转换
+- chmod 权限计算、URL 解析、HTTP 状态码和 MIME 类型参考
+- 图片转 Base64、PNG / JPEG / WebP 转换、Favicon 生成
+- Basic Auth、HMAC、AES-GCM、OTP、RSA 密钥对、IBAN 和密码强度分析
+- IPv4 地址/范围/子网、IPv6 ULA、MAC 地址、User Agent 和安全链接
+- JSON / YAML / TOML / XML / CSV 互转、数学表达式、ETA、摄像头录制
 
-站点还包含命令面板搜索、分类筛选、收藏、最近使用、明暗主题与移动端导航。
+目前共 88 个工具，其中 78 个入口带有官方 `src/tools/<source-id>` 对应关系。对应关系保存在 `src/tools/registry.ts` 的 `sourceId` 字段，工具详情页会显示官方目录名。站点支持命令搜索、分类筛选、收藏、最近打开、明暗主题和移动端导航；扩展工具集中在 `src/tools/extended/index.tsx` 与 `src/tools/advanced.tsx`。
+
+尚未直接实现的官方目录主要是依赖大型词库或第三方运行时的工具（Bcrypt、BIP39、电话解析、PDF 签名、QR/Wi-Fi QR、完整 MAC OUI 数据库等），以及需要外部网络服务的 DNS、Ping、Whois、IP 地理位置类工具；这些入口没有伪造对应关系或空壳功能。
 
 ## 本地开发
 

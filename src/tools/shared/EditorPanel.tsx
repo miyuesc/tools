@@ -38,7 +38,7 @@ function highlightedMarkup(value: string, language: EditorLanguage) {
   return grammar ? Prism.highlight(value, grammar, language) : ''
 }
 
-export function EditorPanel({ label, value = '', onChange, placeholder, actions, readOnly = false, children, language, emptyMessage = '运行工具后，结果会显示在这里' }: {
+export function EditorPanel({ label, value = '', onChange, placeholder, actions, readOnly = false, children, language, showLineNumbers = false, wrapLongLines = false, emptyMessage = '运行工具后，结果会显示在这里' }: {
   label: string
   value?: string
   onChange?: (value: string) => void
@@ -47,16 +47,22 @@ export function EditorPanel({ label, value = '', onChange, placeholder, actions,
   readOnly?: boolean
   children?: ReactNode
   language?: EditorLanguage
+  showLineNumbers?: boolean
+  wrapLongLines?: boolean
   emptyMessage?: string
 }) {
   const resolvedLanguage = language ?? inferLanguage(label)
   const markup = useMemo(() => highlightedMarkup(value, resolvedLanguage), [resolvedLanguage, value])
+  const lineNumbers = useMemo(() => Array.from({ length: Math.max(1, value.split('\n').length) }, (_, index) => index + 1).join('\n'), [value])
   const preRef = useRef<HTMLPreElement>(null)
+  const lineNumbersRef = useRef<HTMLDivElement>(null)
 
   const syncScroll = (event: UIEvent<HTMLTextAreaElement>) => {
-    if (!preRef.current) return
-    preRef.current.scrollTop = event.currentTarget.scrollTop
-    preRef.current.scrollLeft = event.currentTarget.scrollLeft
+    if (preRef.current) {
+      preRef.current.scrollTop = event.currentTarget.scrollTop
+      preRef.current.scrollLeft = event.currentTarget.scrollLeft
+    }
+    if (lineNumbersRef.current) lineNumbersRef.current.scrollTop = event.currentTarget.scrollTop
   }
 
   const insertTab = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -78,8 +84,16 @@ export function EditorPanel({ label, value = '', onChange, placeholder, actions,
         <span>{label}</span>
         <div>{resolvedLanguage !== 'plain' && <span className="language-badge">{languageNames[resolvedLanguage]}</span>}{actions}</div>
       </div>
-      {children || (
-        <div className={`code-editor ${resolvedLanguage !== 'plain' ? 'has-highlighting' : ''} ${value ? '' : 'is-empty'}`}>
+      {children || (readOnly ? (
+        <div className={`code-output ${showLineNumbers ? 'has-line-numbers' : ''} ${wrapLongLines ? 'wrap-long-lines' : ''} ${value ? '' : 'is-empty'}`} role="region" aria-label={label}>
+          {value ? <>
+            {showLineNumbers && <div className="output-line-numbers" aria-hidden="true">{lineNumbers}</div>}
+            <pre><code className={`language-${resolvedLanguage}`} {...(resolvedLanguage !== 'plain' ? { dangerouslySetInnerHTML: { __html: markup } } : { children: value })} />{value.endsWith('\n') ? '\n' : null}</pre>
+          </> : <span className="editor-empty" aria-live="polite">{emptyMessage}</span>}
+        </div>
+      ) : (
+        <div className={`code-editor ${resolvedLanguage !== 'plain' ? 'has-highlighting' : ''} ${showLineNumbers ? 'has-line-numbers' : ''} ${value ? '' : 'is-empty'}`}>
+          {showLineNumbers && <div ref={lineNumbersRef} className="line-numbers" aria-hidden="true">{lineNumbers}</div>}
           {resolvedLanguage !== 'plain' && <pre ref={preRef} aria-hidden="true"><code className={`language-${resolvedLanguage}`} dangerouslySetInnerHTML={{ __html: markup }} />{value.endsWith('\n') ? '\n' : null}</pre>}
           <textarea
             aria-label={label}
@@ -88,12 +102,10 @@ export function EditorPanel({ label, value = '', onChange, placeholder, actions,
             onKeyDown={insertTab}
             onScroll={syncScroll}
             placeholder={placeholder}
-            readOnly={readOnly}
             spellCheck={false}
           />
-          {readOnly && !value && <span className="editor-empty" aria-live="polite">{emptyMessage}</span>}
         </div>
-      )}
+      ))}
     </div>
   )
 }

@@ -22,12 +22,36 @@ function decodeBase64(value: string) {
   return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
 }
 
+function transformPairs(value: string, mode: 'encode' | 'decode') {
+  const transform = mode === 'encode' ? encodeURIComponent : decodeURIComponent
+  return value.split('&').map((pair) => {
+    const index = pair.indexOf('=')
+    if (index < 0) return pair
+    return `${pair.slice(0, index + 1)}${transform(pair.slice(index + 1))}`
+  }).join('&')
+}
+
+function transformUrlParameters(value: string, mode: 'encode' | 'decode') {
+  const hashIndex = value.indexOf('#')
+  const beforeHash = hashIndex < 0 ? value : value.slice(0, hashIndex)
+  const hash = hashIndex < 0 ? '' : value.slice(hashIndex + 1)
+  const queryIndex = beforeHash.indexOf('?')
+  const base = queryIndex < 0 ? beforeHash : beforeHash.slice(0, queryIndex)
+  const query = queryIndex < 0 ? '' : `?${transformPairs(beforeHash.slice(queryIndex + 1), mode)}`
+  if (!hash) return `${base}${query}`
+  const hashQueryIndex = hash.indexOf('?')
+  const transformedHash = hashQueryIndex >= 0
+    ? `${hash.slice(0, hashQueryIndex + 1)}${transformPairs(hash.slice(hashQueryIndex + 1), mode)}`
+    : hash.includes('=') ? transformPairs(hash, mode) : hash
+  return `${base}${query}#${transformedHash}`
+}
+
 export default function TransformPage({ kind }: { kind: 'base64' | 'url' }) {
   const [input, setInput] = useState('Lumen Tools 在浏览器中处理文本')
   const [output, setOutput] = useState('')
   const [mode, setMode] = useState<'encode' | 'decode'>('encode')
   const [urlSafe, setUrlSafe] = useState(false)
-  const [urlScope, setUrlScope] = useState<'component' | 'full'>('component')
+  const [urlScope, setUrlScope] = useState<'component' | 'full' | 'params'>('component')
   const [error, setError] = useState('')
 
   const resetResult = () => { setOutput(''); setError('') }
@@ -38,9 +62,11 @@ export default function TransformPage({ kind }: { kind: 'base64' | 'url' }) {
     try {
       const result = kind === 'base64'
         ? mode === 'encode' ? encodeBase64(input, urlSafe) : decodeBase64(input)
-        : mode === 'encode'
-          ? urlScope === 'component' ? encodeURIComponent(input) : encodeURI(input)
-          : urlScope === 'component' ? decodeURIComponent(input) : decodeURI(input)
+        : urlScope === 'params'
+          ? transformUrlParameters(input, mode)
+          : mode === 'encode'
+            ? urlScope === 'component' ? encodeURIComponent(input) : encodeURI(input)
+            : urlScope === 'component' ? decodeURIComponent(input) : decodeURI(input)
       setOutput(result)
       setError('')
     } catch (cause) {
@@ -54,7 +80,7 @@ export default function TransformPage({ kind }: { kind: 'base64' | 'url' }) {
       <button className={mode === 'encode' ? 'active' : ''} onClick={() => changeMode('encode')}>编码</button>
       <button className={mode === 'decode' ? 'active' : ''} onClick={() => changeMode('decode')}>解码</button>
       {kind === 'base64' && <label className="toolbar-check"><input type="checkbox" checked={urlSafe} onChange={(event) => { setUrlSafe(event.target.checked); resetResult() }} />URL-safe</label>}
-      {kind === 'url' && <select aria-label="URL 编码范围" value={urlScope} onChange={(event) => { setUrlScope(event.target.value as 'component' | 'full'); resetResult() }}><option value="component">参数 / 组件</option><option value="full">完整 URL</option></select>}
+      {kind === 'url' && <select aria-label="URL 编码范围" value={urlScope} onChange={(event) => { setUrlScope(event.target.value as 'component' | 'full' | 'params'); resetResult() }}><option value="component">文本 / 单个参数</option><option value="params">URL 中的参数值</option><option value="full">完整 URL</option></select>}
       <span />
       <button className="primary-action" onClick={run}><ArrowLeftRight size={16} />开始转换</button>
     </div>

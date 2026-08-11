@@ -18,25 +18,35 @@ import {
   LockKeyhole,
   Network,
   Palette,
+  QrCode,
   Regex,
   ShieldCheck,
   Sigma,
   TextCursorInput,
   Type,
   WandSparkles,
+  Workflow,
 } from 'lucide-react'
 import type { ToolDefinition } from '../types/tool'
 import Base64ToolPage from './base64'
 import ColorToolPage from './color'
+import CronPage from './cron'
 import HashToolPage from './hash'
 import ImageStudioPage from './image-studio'
 import JsonToolPage from './json'
 import JwtToolPage from './jwt'
+import MermaidEditorPage from './mermaid'
+import QrCodePage from './qr'
 import RegexToolPage from './regex'
+import RegexMemoPage from './regex-memo'
 import TextToolPage from './text'
 import TimestampToolPage from './timestamp'
 import UrlToolPage from './url'
 import UuidToolPage from './uuid'
+import GitMemoPage from './git-memo'
+import SvgPlaceholderPage from './svg-placeholder'
+import UrlParserPage from './url-parser'
+import YamlWorkbenchPage from './yaml-workbench'
 import {
   Base64FilePage,
   BasicAuthPage,
@@ -59,8 +69,6 @@ import {
   CameraRecorderPage,
   SafeLinkPage,
   MacLookupPage,
-  RegexMemoPage,
-  GitMemoPage,
   BenchmarkPage,
   RsaKeyPage,
   KeycodePage,
@@ -76,7 +84,6 @@ import {
   PercentagePage,
   RandomPortPage,
   SlugifyPage,
-  SvgPlaceholderPage,
   TemperaturePage,
   TomlJsonPage,
   TomlYamlPage,
@@ -86,7 +93,6 @@ import {
   UserAgentPage,
   XmlJsonPage,
   YamlJsonPage,
-  YamlViewerPage,
   EtaPage,
   EncryptionPage,
 } from './advanced'
@@ -95,7 +101,6 @@ import {
   AsciiTablePage,
   BinaryTextPage,
   ChmodPage,
-  CronPage,
   CurlToCodePage,
   DiffToolPage,
   FaviconGeneratorPage,
@@ -115,14 +120,13 @@ import {
   TextCleanerPage,
   XmlToolPage,
   LoremPage,
-  UrlParserPage,
 } from './extended'
 
 export const tools: ToolDefinition[] = [
   { id: 'image-studio', name: '图片裁剪与拼接', description: '编辑、拼接图片，复制或导出透明 PNG', category: '图片', icon: Images, tags: ['图片', '裁剪', '拼接', 'png', 'canvas'], accent: '#b8f35d', component: ImageStudioPage, featured: true, fullPage: true, workspaceClassName: 'image-workspace' },
-  { id: 'json', name: 'JSON 工作台', description: '格式化、压缩和检查 JSON', category: '开发', icon: Braces, tags: ['json', '格式化', 'validate'], accent: '#b8f35d', component: JsonToolPage, featured: true, sourceId: 'json-viewer' },
+  { id: 'json', name: 'JSON 工作台', description: '格式化、排序、压缩和检查 JSON', category: '开发', icon: Braces, tags: ['json', '格式化', 'validate'], accent: '#b8f35d', component: JsonToolPage, featured: true, sourceId: 'json-viewer' },
   { id: 'base64', name: 'Base64 编解码', description: '编码或解码 UTF-8 文本', category: '编码', icon: ArrowLeftRight, tags: ['base64', '编码', '解码'], accent: '#8ad8ff', component: Base64ToolPage, featured: true, sourceId: 'base64-string-converter' },
-  { id: 'url', name: 'URL 编解码', description: '编码或解码 URL 组件', category: '编码', icon: Link2, tags: ['url', 'encode', 'decode'], accent: '#c4a7ff', component: UrlToolPage, sourceId: 'url-encoder' },
+  { id: 'url', name: 'URL 编解码', description: '编码或解码文本、URL 及其中的参数值', category: '编码', icon: Link2, tags: ['url', 'encode', 'decode'], accent: '#c4a7ff', component: UrlToolPage, sourceId: 'url-encoder' },
   { id: 'jwt', name: 'JWT 解码器', description: '查看 JWT 的 Header 和 Payload', category: '开发', icon: KeyRound, tags: ['jwt', 'token', 'debug'], accent: '#ffb86b', component: JwtToolPage, sourceId: 'jwt-parser' },
   { id: 'uuid', name: 'UUID 生成器', description: '一次生成多个 UUID v4', category: '生成', icon: Fingerprint, tags: ['uuid', 'guid', '生成'], accent: '#ff8fa3', component: UuidToolPage, sourceId: 'uuid-generator' },
   { id: 'hash', name: '哈希生成器', description: '计算文本或本地文件的 SHA 摘要', category: '生成', icon: Hash, tags: ['hash', 'sha', '摘要'], accent: '#7ee2c8', component: HashToolPage, sourceId: 'hash-text' },
@@ -142,16 +146,18 @@ export const tools: ToolDefinition[] = [
   { id: 'number-base', name: '进制转换', description: '在二进制、八进制、十进制和十六进制间转换', category: '编码', icon: Binary, tags: ['base', 'binary', 'hex', '进制'], accent: '#75e0e6', component: NumberBasePage, sourceId: 'integer-base-converter' },
   { id: 'roman', name: '罗马数字转换', description: '转换 1–3999 的阿拉伯数字与罗马数字', category: '转换', icon: Sigma, tags: ['roman', 'number', '数字'], accent: '#e2a6ff', component: RomanNumeralPage, sourceId: 'roman-numeral-converter' },
   { id: 'chmod', name: 'chmod 权限计算器', description: '通过权限选择生成八进制值和 chmod 命令', category: '开发', icon: ShieldCheck, tags: ['chmod', 'linux', 'permission'], accent: '#a7d36d', component: ChmodPage, sourceId: 'chmod-calculator' },
-  { id: 'url-parser', name: 'URL 解析器', description: '拆解协议、主机、端口、路径和查询参数', category: '开发', icon: Link2, tags: ['url', 'parse', 'query'], accent: '#c4a7ff', component: UrlParserPage, sourceId: 'url-parser' },
+  { id: 'url-parser', name: 'URL 解析器', description: '拆解 URL、查询参数和 Hash 参数并显示中文转码', category: '开发', icon: Link2, tags: ['url', 'parse', 'query', 'hash'], accent: '#c4a7ff', component: UrlParserPage, sourceId: 'url-parser' },
   { id: 'http-status', name: 'HTTP 状态码参考', description: '快速查询常见 HTTP 状态码含义', category: '参考', icon: Network, tags: ['http', 'status', 'reference'], accent: '#ff9e8a', component: HttpStatusPage, sourceId: 'http-status-codes' },
   { id: 'mime', name: 'MIME 类型参考', description: '查询常见文件扩展名对应的 MIME 类型', category: '参考', icon: FileType2, tags: ['mime', 'content-type', 'reference'], accent: '#87c9ff', component: MimeTypePage, sourceId: 'mime-types' },
   { id: 'image-base64', name: '图片转 Base64', description: '将图片转换为 Data URI 或 Base64 文本', category: '图片', icon: FileImage, tags: ['image', 'base64', 'data-uri'], accent: '#ff8fb8', component: ImageBase64Page, sourceId: 'base64-file-converter' },
   { id: 'image-converter', name: '图片格式转换', description: '在 PNG、JPEG 和 WebP 之间本地转换', category: '图片', icon: Images, tags: ['image', 'png', 'jpeg', 'webp'], accent: '#ffb56b', component: ImageConverterPage },
   { id: 'favicon', name: 'Favicon 生成器', description: '从图片生成网站图标和 link 标签', category: '图片', icon: WandSparkles, tags: ['favicon', 'icon', 'png'], accent: '#d2f06b', component: FaviconGeneratorPage },
+  { id: 'qr-code', name: '二维码创建', description: '配置颜色、中心图片、遮罩和边框并导出二维码', category: '图片', icon: QrCode, tags: ['qr', 'qrcode', '二维码'], accent: '#78dfc2', component: QrCodePage },
   { id: 'svg-optimizer', name: 'SVG 优化器', description: '移除注释和多余空白，压缩 SVG 文本', category: '图片', icon: Images, tags: ['svg', 'optimize', 'minify'], accent: '#e4a7ff', component: SvgOptimizerPage },
-  { id: 'cron', name: 'Cron 表达式', description: '用预设快速生成并拆解 5 段 Cron 表达式', category: '开发', icon: Clock3, tags: ['cron', 'schedule', '定时'], accent: '#f0c96d', component: CronPage, sourceId: 'crontab-generator' },
+  { id: 'cron', name: 'Cron 表达式', description: '严格验证并用中文解析五字段 Cron 表达式', category: '开发', icon: Clock3, tags: ['cron', 'schedule', '定时'], accent: '#f0c96d', component: CronPage, sourceId: 'crontab-generator' },
   { id: 'curl-to-code', name: 'cURL 转 fetch', description: '将常见 cURL 请求转换为 JavaScript fetch', category: '转换', icon: Code2, tags: ['curl', 'fetch', 'http'], accent: '#7ec8ff', component: CurlToCodePage },
-  { id: 'lorem', name: 'Lorem Ipsum 生成器', description: '生成指定段落数的占位文本', category: '生成', icon: WandSparkles, tags: ['lorem', 'placeholder', '占位'], accent: '#d6a6ff', component: LoremPage, sourceId: 'lorem-ipsum-generator' },
+  { id: 'lorem', name: 'Lorem Ipsum 生成器', description: '按段落、句子或单词生成占位文本', category: '生成', icon: WandSparkles, tags: ['lorem', 'placeholder', '占位'], accent: '#d6a6ff', component: LoremPage, sourceId: 'lorem-ipsum-generator' },
+  { id: 'mermaid', name: 'Mermaid 图表编辑器', description: '在线编辑、预览并下载 Mermaid 图表', category: '开发', icon: Workflow, tags: ['mermaid', 'diagram', 'flowchart'], accent: '#83d4ff', component: MermaidEditorPage },
   { id: 'ascii', name: 'ASCII 表', description: '查询可打印字符、十进制和十六进制编码', category: '参考', icon: FileType2, tags: ['ascii', '字符', 'reference'], accent: '#9ae58b', component: AsciiTablePage },
   { id: 'html-entities', name: 'HTML 实体编解码', description: '编码或解码 HTML 特殊字符和实体', category: '编码', icon: FileCode2, tags: ['html', 'entities', 'encode'], accent: '#ffa878', component: HtmlEntitiesPage, sourceId: 'html-entities' },
   { id: 'binary-text', name: '文本与二进制转换', description: '在 UTF-8 文本和二进制字节之间转换', category: '编码', icon: Binary, tags: ['binary', 'text', 'utf8'], accent: '#7cdddf', component: BinaryTextPage, sourceId: 'text-to-binary' },
@@ -191,7 +197,7 @@ export const tools: ToolDefinition[] = [
   { id: 'docker-compose', name: 'docker run 转 Compose', description: '把常见 docker run 命令转换为 Compose YAML', category: '转换', icon: Code2, tags: ['docker', 'compose', 'yaml'], accent: '#77c7ff', component: DockerComposePage, sourceId: 'docker-run-to-docker-compose-converter' },
   { id: 'json-yaml', name: 'JSON 转 YAML', description: '将 JSON 对象转换为可读 YAML', category: '转换', icon: FileCode2, tags: ['json', 'yaml', 'convert'], accent: '#a5d66f', component: JsonYamlPage, sourceId: 'json-to-yaml-converter' },
   { id: 'yaml-json', name: 'YAML 转 JSON', description: '完整解析 YAML 数组、嵌套结构和标量类型', category: '转换', icon: FileJson, tags: ['yaml', 'json', 'convert'], accent: '#7ed0ff', component: YamlJsonPage, sourceId: 'yaml-to-json-converter' },
-  { id: 'yaml-viewer', name: 'YAML 查看器', description: '解析并查看 YAML 的 JSON 结构', category: '开发', icon: FileType2, tags: ['yaml', 'viewer', 'parse'], accent: '#9be1a1', component: YamlViewerPage, sourceId: 'yaml-viewer' },
+  { id: 'yaml-viewer', name: 'YAML 工作台', description: '美化、排序 YAML 并切换 JSON 格式查看', category: '开发', icon: FileType2, tags: ['yaml', 'format', 'sort', 'json'], accent: '#9be1a1', component: YamlWorkbenchPage, sourceId: 'yaml-viewer' },
   { id: 'json-toml', name: 'JSON 转 TOML', description: '将嵌套 JSON 序列化为 TOML 1.1', category: '转换', icon: FileCode2, tags: ['json', 'toml', 'convert'], accent: '#f0b66e', component: JsonTomlPage, sourceId: 'json-to-toml' },
   { id: 'toml-json', name: 'TOML 转 JSON', description: '完整解析 TOML 表、数组表与日期', category: '转换', icon: FileJson, tags: ['toml', 'json', 'convert'], accent: '#9fc9ff', component: TomlJsonPage, sourceId: 'toml-to-json' },
   { id: 'toml-yaml', name: 'TOML 转 YAML', description: '将 TOML 1.1 配置转换为 YAML', category: '转换', icon: FileType2, tags: ['toml', 'yaml', 'convert'], accent: '#d7a5ff', component: TomlYamlPage, sourceId: 'toml-to-yaml' },
@@ -202,8 +208,8 @@ export const tools: ToolDefinition[] = [
   { id: 'camera-recorder', name: '摄像头录制', description: '使用浏览器 MediaRecorder 录制摄像头和麦克风', category: '图片', icon: Images, tags: ['camera', 'recorder', 'media'], accent: '#ff9bb8', component: CameraRecorderPage, sourceId: 'camera-recorder' },
   { id: 'safe-link', name: '安全链接解码', description: '提取 Microsoft、Google 等包装链接的原始地址', category: '网络', icon: Link2, tags: ['safelink', 'url', 'decode'], accent: '#a5d88a', component: SafeLinkPage, sourceId: 'safelink-decoder' },
   { id: 'mac-lookup', name: 'MAC 厂商查询', description: '使用内置 OUI 样本表识别常见 MAC 厂商', category: '网络', icon: Network, tags: ['mac', 'oui', 'lookup'], accent: '#a5c9ff', component: MacLookupPage, sourceId: 'mac-address-lookup' },
-  { id: 'regex-memo', name: '正则备忘录', description: '快速选择和复制常见正则表达式片段', category: '开发', icon: Regex, tags: ['regex', 'memo', 'snippet'], accent: '#b6e17c', component: RegexMemoPage, sourceId: 'regex-memo' },
-  { id: 'git-memo', name: 'Git 命令备忘', description: '保存当前会话中的常用 Git 命令片段', category: '开发', icon: Code2, tags: ['git', 'memo', 'command'], accent: '#ffb36d', component: GitMemoPage, sourceId: 'git-memo' },
+  { id: 'regex-memo', name: '正则备忘录', description: '分类检索和复制 200 条常用正则表达式', category: '开发', icon: Regex, tags: ['regex', 'memo', 'snippet'], accent: '#b6e17c', component: RegexMemoPage, sourceId: 'regex-memo' },
+  { id: 'git-memo', name: 'Git 命令备忘', description: '按工作流分类查询 Git 命令和中文说明', category: '开发', icon: Code2, tags: ['git', 'memo', 'command'], accent: '#ffb36d', component: GitMemoPage, sourceId: 'git-memo' },
   { id: 'benchmark', name: 'JSON 基准测试', description: '在浏览器中对 JSON 序列化循环进行简单基准测试', category: '开发', icon: Clock3, tags: ['benchmark', 'performance', 'json'], accent: '#85d9e8', component: BenchmarkPage, sourceId: 'benchmark-builder' },
   { id: 'rsa-key-pair', name: 'RSA 密钥对生成器', description: '使用 Web Crypto 生成可复制的 RSA-OAEP PEM 密钥', category: '安全', icon: KeyRound, tags: ['rsa', 'key', 'crypto'], accent: '#d0adff', component: RsaKeyPage, sourceId: 'rsa-key-pair-generator' },
   { id: 'json-minify', name: 'JSON 压缩器', description: '移除 JSON 空白并复制压缩结果', category: '开发', icon: Braces, tags: ['json', 'minify', '压缩'], accent: '#b8f35d', component: JsonToolPage, sourceId: 'json-minify' },

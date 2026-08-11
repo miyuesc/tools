@@ -10,7 +10,7 @@ import {
   Upload,
   WandSparkles,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CopyButton, EditorPanel } from '../shared/EditorPanel'
 import { FileDropZone } from '../shared/FileDropZone'
 import { formatBytes } from '../shared/fileUtils'
@@ -163,8 +163,11 @@ function diffLines(left: string, right: string): DiffLine[] {
 export function DiffToolPage() {
   const [left, setLeft] = useState('const tools = 11\nconst local = true')
   const [right, setRight] = useState('const tools = 28\nconst local = true\nconst private = true')
+  const [hideSame, setHideSame] = useState(false)
   const lines = useMemo(() => diffLines(left, right), [left, right])
-  return <div className="stacked-workspace"><div className="dual-editor compact"><EditorPanel label="原始文本" value={left} onChange={setLeft} /><EditorPanel label="新文本" value={right} onChange={setRight} /></div><div className="diff-output"><div className="panel-label"><span>差异结果</span><span>{lines.filter((line) => line.type !== 'same').length} 处变化</span></div>{lines.map((line, index) => <div className={`diff-line ${line.type}`} key={`${line.number}-${index}`}><code>{line.number}</code><span>{line.type === 'add' ? '+' : line.type === 'remove' ? '−' : ' '}</span><pre>{line.text || ' '}</pre></div>)}</div></div>
+  const visible = hideSame ? lines.filter((line) => line.type !== 'same') : lines
+  const patchText = lines.map((line) => `${line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' '} ${line.text}`).join('\n')
+  return <div className="stacked-workspace"><div className="workspace-toolbar"><label className="toolbar-check"><input type="checkbox" checked={hideSame} onChange={(event) => setHideSame(event.target.checked)} />隐藏相同行</label><span className="toolbar-hint">逐行比较 · 保留原始换行</span><CopyButton value={patchText} /></div><div className="dual-editor compact"><EditorPanel label="原始文本" value={left} onChange={setLeft} /><EditorPanel label="新文本" value={right} onChange={setRight} /></div><div className="diff-output"><div className="panel-label"><span>差异结果</span><span>{lines.filter((line) => line.type !== 'same').length} 处变化{hideSame ? ' · 已隐藏相同行' : ''}</span></div>{visible.map((line, index) => <div className={`diff-line ${line.type}`} key={`${line.number}-${index}`}><code>{line.number}</code><span>{line.type === 'add' ? '+' : line.type === 'remove' ? '−' : ' '}</span><pre>{line.text || ' '}</pre></div>)}</div></div>
 }
 
 const caseWords = (value: string) => value.trim().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
@@ -311,30 +314,32 @@ export function ImageBase64Page() {
   const [mode, setMode] = useState<'data-uri' | 'base64'>('data-uri')
   const [error, setError] = useState('')
   const onFile = (file: File) => {
-    setName(file.name); setSize(file.size); setDataUrl(''); setError('')
+    setName(file.name || '剪贴板图片'); setSize(file.size); setDataUrl(''); setError('')
     const reader = new FileReader()
     reader.onload = () => setDataUrl(String(reader.result))
     reader.onerror = () => setError('读取图片失败，请重新选择文件')
     reader.readAsDataURL(file)
   }
   const output = mode === 'data-uri' ? dataUrl : dataUrl.slice(dataUrl.indexOf(',') + 1)
-  return <div className="image-tool-layout"><FileDropZone accept="image/*" maxBytes={MAX_IMAGE_BYTES} title={name || '选择图片或拖入文件'} detail={name ? `${formatBytes(size)} · 可重复选择同名文件` : `生成 Data URI / Base64 · 最大 ${formatBytes(MAX_IMAGE_BYTES)}`} icon={<Upload size={24} />} onFile={onFile} onError={setError} />{dataUrl && <div className="image-preview"><img src={dataUrl} alt={name} /></div>}<div className="converter-options"><label>输出<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="data-uri">Data URI</option><option value="base64">纯 Base64</option></select></label><span className="file-summary">{dataUrl ? `${name} · ${formatBytes(size)}` : '等待导入图片'}</span></div><EditorPanel label={mode === 'data-uri' ? 'Data URI' : 'Base64'} value={output} readOnly actions={<CopyButton value={output} />} emptyMessage={error || '导入图片后生成编码'} /><div className={`status-line ${error ? 'error' : ''}`}>{error || (dataUrl ? '图片已在当前浏览器中读取，未上传服务器' : `支持拖拽导入，文件上限 ${formatBytes(MAX_IMAGE_BYTES)}`)}</div></div>
+  return <div className="image-tool-layout"><FileDropZone accept="image/*" maxBytes={MAX_IMAGE_BYTES} title={name || '选择、拖入或粘贴图片'} detail={name ? `${formatBytes(size)} · 可重复选择同名文件` : `生成 Data URI / Base64 · 最大 ${formatBytes(MAX_IMAGE_BYTES)}`} icon={<Upload size={24} />} enablePaste onFile={onFile} onError={setError} />{dataUrl && <div className="image-preview"><img src={dataUrl} alt={name} /></div>}<div className="converter-options"><label>输出<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}><option value="data-uri">Data URI</option><option value="base64">纯 Base64</option></select></label><span className="file-summary">{dataUrl ? `${name} · ${formatBytes(size)}` : '等待导入图片'}</span></div><EditorPanel label={mode === 'data-uri' ? 'Data URI' : 'Base64'} value={output} readOnly actions={<CopyButton value={output} />} wrapLongLines emptyMessage={error || '导入或粘贴图片后生成编码'} /><div className={`status-line ${error ? 'error' : ''}`}>{error || (dataUrl ? '图片已在当前浏览器中读取，未上传服务器' : `支持选择、拖拽和 Ctrl/⌘V 粘贴，文件上限 ${formatBytes(MAX_IMAGE_BYTES)}`)}</div></div>
 }
+
+type ImageFormat = 'image/png' | 'image/jpeg' | 'image/webp'
 
 export function ImageConverterPage() {
   const [file, setFile] = useState<File | null>(null)
   const [source, setSource] = useState('')
-  const [format, setFormat] = useState<'image/png' | 'image/jpeg' | 'image/webp'>('image/webp')
+  const [format, setFormat] = useState<ImageFormat>('image/webp')
   const [quality, setQuality] = useState(0.82)
   const [background, setBackground] = useState('#ffffff')
   const [details, setDetails] = useState('')
-  const [appliedSettings, setAppliedSettings] = useState({ format: 'image/webp', quality: 0.82, background: '#ffffff' })
+  const [appliedFormat, setAppliedFormat] = useState<ImageFormat>('image/webp')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const outputUrlRef = useRef('')
-  useEffect(() => () => { if (outputUrlRef.current) URL.revokeObjectURL(outputUrlRef.current) }, [])
-  const convert = async (inputFile: File, outputFormat = format, outputQuality = quality, jpegBackground = background) => {
-    setBusy(true); setError('')
+  const conversionIdRef = useRef(0)
+  useEffect(() => () => { conversionIdRef.current += 1; if (outputUrlRef.current) URL.revokeObjectURL(outputUrlRef.current) }, [])
+  const convert = useCallback(async (inputFile: File, outputFormat: ImageFormat, outputQuality: number, jpegBackground: string, conversionId: number) => {
     try {
       const decoded = await decodeImage(inputFile)
       const canvas = document.createElement('canvas'); canvas.width = decoded.width; canvas.height = decoded.height
@@ -345,17 +350,32 @@ export function ImageConverterPage() {
         context.drawImage(decoded.source, 0, 0)
       } finally { decoded.dispose() }
       const blob = await canvasToBlob(canvas, outputFormat, outputFormat === 'image/png' ? undefined : outputQuality)
+      if (conversionId !== conversionIdRef.current) return
       if (outputUrlRef.current) URL.revokeObjectURL(outputUrlRef.current)
       const nextUrl = URL.createObjectURL(blob); outputUrlRef.current = nextUrl; setSource(nextUrl)
-      setAppliedSettings({ format: outputFormat, quality: outputQuality, background: jpegBackground })
+      setAppliedFormat(outputFormat)
       setDetails(`${decoded.width}×${decoded.height} · ${formatBytes(inputFile.size)} → ${formatBytes(blob.size)}`)
-    } catch (cause) { setError(cause instanceof Error ? cause.message : '图片转换失败'); setSource(''); setDetails('') }
-    finally { setBusy(false) }
+    } catch (cause) {
+      if (conversionId !== conversionIdRef.current) return
+      if (outputUrlRef.current) URL.revokeObjectURL(outputUrlRef.current)
+      outputUrlRef.current = ''; setError(cause instanceof Error ? cause.message : '图片转换失败'); setSource(''); setDetails('')
+    } finally { if (conversionId === conversionIdRef.current) setBusy(false) }
+  }, [])
+  useEffect(() => {
+    if (!file) return
+    const conversionId = ++conversionIdRef.current
+    setBusy(true); setError('')
+    const timer = window.setTimeout(() => void convert(file, format, quality, background, conversionId), 120)
+    return () => window.clearTimeout(timer)
+  }, [background, convert, file, format, quality])
+  const handleFile = (inputFile: File) => {
+    conversionIdRef.current += 1
+    if (outputUrlRef.current) URL.revokeObjectURL(outputUrlRef.current)
+    outputUrlRef.current = ''; setSource(''); setDetails(''); setFile(inputFile); setError('')
   }
-  const handleFile = (inputFile: File) => { setFile(inputFile); void convert(inputFile) }
-  const extension = appliedSettings.format === 'image/jpeg' ? 'jpg' : appliedSettings.format.split('/')[1]
-  const settingsChanged = Boolean(source) && (format !== appliedSettings.format || (format !== 'image/png' && quality !== appliedSettings.quality) || (format === 'image/jpeg' && background !== appliedSettings.background))
-  return <div className="image-tool-layout"><FileDropZone accept="image/*" maxBytes={MAX_IMAGE_BYTES} title={file?.name || '选择图片或拖入文件'} detail={file ? `${file.type || '未知格式'} · ${formatBytes(file.size)}` : `PNG / JPEG / WebP · 最大 ${formatBytes(MAX_IMAGE_BYTES)}`} icon={<FileImage size={24} />} onFile={handleFile} onError={setError} />{source && <div className="image-preview"><img src={source} alt="转换结果" /></div>}<div className="converter-options"><label>输出格式<select value={format} onChange={(event) => setFormat(event.target.value as typeof format)}><option value="image/webp">WebP</option><option value="image/jpeg">JPEG</option><option value="image/png">PNG</option></select></label><label>质量 <input type="range" min="0.2" max="1" step="0.01" value={quality} disabled={format === 'image/png'} onChange={(event) => setQuality(Number(event.target.value))} /><code>{format === 'image/png' ? '无损' : `${Math.round(quality * 100)}%`}</code></label>{format === 'image/jpeg' && <label>透明背景<input type="color" value={background} onChange={(event) => setBackground(event.target.value)} /></label>}<button className="primary-action" onClick={() => { if (file) void convert(file) }} disabled={!file || busy}><RefreshCw size={15} />{busy ? '处理中…' : '应用设置'}</button></div>{source && <a className="download-link" href={source} download={`converted.${extension}`}><Download size={15} />下载 {extension?.toUpperCase()}</a>}<div className={`status-line ${error ? 'error' : settingsChanged ? 'warning' : ''}`}>{error || (settingsChanged ? '设置已变化，请点击“应用设置”后再下载' : details) || '导入图片后可调整格式、质量和 JPEG 透明区域背景'}</div></div>
+  const extension = appliedFormat === 'image/jpeg' ? 'jpg' : appliedFormat.split('/')[1]
+  const downloadReady = Boolean(source) && !busy && !error && appliedFormat === format
+  return <div className="image-tool-layout image-converter-layout"><div className="converter-options converter-options-top"><label>输出格式<select value={format} onChange={(event) => setFormat(event.target.value as ImageFormat)}><option value="image/webp">WebP</option><option value="image/jpeg">JPEG</option><option value="image/png">PNG</option></select></label><label>质量 <input type="range" min="0.2" max="1" step="0.01" value={quality} disabled={format === 'image/png'} onChange={(event) => setQuality(Number(event.target.value))} /><code>{format === 'image/png' ? '无损' : `${Math.round(quality * 100)}%`}</code></label>{format === 'image/jpeg' && <label>透明背景<input type="color" value={background} onChange={(event) => setBackground(event.target.value)} /></label>}{downloadReady ? <a className="converter-download" href={source} download={`converted.${extension}`}><Download size={15} />下载 {extension.toUpperCase()}</a> : <button disabled><Download size={15} />{busy ? '预览更新中…' : error ? '转换失败' : '等待图片'}</button>}</div><FileDropZone accept="image/*" maxBytes={MAX_IMAGE_BYTES} title={file?.name || '选择、拖入或粘贴图片'} detail={file ? `${file.type || '未知格式'} · ${formatBytes(file.size)}` : `PNG / JPEG / WebP · 最大 ${formatBytes(MAX_IMAGE_BYTES)}`} icon={<FileImage size={24} />} enablePaste onFile={handleFile} onError={setError} />{source && <div className="image-preview"><img src={source} alt="转换结果" /></div>}<div className={`status-line ${error ? 'error' : ''}`}>{error || (busy ? '正在根据设置自动更新预览…' : details) || '导入图片后，格式、质量和 JPEG 背景调整会自动更新预览'}</div></div>
 }
 
 export function FaviconGeneratorPage() {
@@ -370,21 +390,13 @@ export function FaviconGeneratorPage() {
   }
   const handleFile = (inputFile: File) => { setFile(inputFile); void generate(inputFile) }
   const snippet = `<link rel="icon" type="image/png" sizes="${size}x${size}" href="/favicon-${size}.png" />`
-  return <div className="image-tool-layout"><FileDropZone accept="image/*" maxBytes={MAX_IMAGE_BYTES} title={file?.name || '选择图片或拖入文件'} detail={file ? `${formatBytes(file.size)} · 当前输出 ${size}×${size}` : `输出多尺寸 PNG 图标 · 最大 ${formatBytes(MAX_IMAGE_BYTES)}`} icon={<Sparkles size={24} />} onFile={handleFile} onError={setError} />{source && <div className="image-preview favicon-preview"><img src={source} alt={`${size}×${size} favicon`} /></div>}<div className="converter-options favicon-sizes"><span>输出尺寸</span>{[16, 32, 64, 128, 256].map((value) => <button key={value} className={size === value ? 'selected' : ''} onClick={() => { setSize(value); if (file) void generate(file, value) }}>{value}</button>)}</div><EditorPanel label="HTML" value={source ? snippet : ''} readOnly actions={<CopyButton value={source ? snippet : ''} />} emptyMessage={error || '生成后显示 link 标签'} language="markup" />{source && <a className="download-link" href={source} download={`favicon-${size}.png`}><Download size={15} />下载 {size}×{size} PNG</a>}<div className={`status-line ${error ? 'error' : ''}`}>{error || (source ? '透明背景会保留；可切换尺寸后分别下载' : '建议使用正方形透明 PNG 或 SVG 源图')}</div></div>
+  return <div className="image-tool-layout"><FileDropZone accept="image/*" maxBytes={MAX_IMAGE_BYTES} title={file?.name || '选择图片或拖入文件'} detail={file ? `${formatBytes(file.size)} · 当前输出 ${size}×${size}` : `输出多尺寸 PNG 图标 · 最大 ${formatBytes(MAX_IMAGE_BYTES)}`} icon={<Sparkles size={24} />} onFile={handleFile} onError={setError} />{source && <div className="image-preview favicon-preview"><img src={source} alt={`${size}×${size} favicon`} /></div>}<div className="converter-options favicon-sizes"><span>输出尺寸</span>{[16, 32, 64, 128, 256].map((value) => <button key={value} className={size === value ? 'selected' : ''} onClick={() => { setSize(value); if (file) void generate(file, value) }}>{value}</button>)}{source && <a className="favicon-download" href={source} download={`favicon-${size}.png`}><Download size={15} />下载 {size}×{size} PNG</a>}</div><EditorPanel label="HTML" value={source ? snippet : ''} readOnly actions={<CopyButton value={source ? snippet : ''} />} emptyMessage={error || '生成后显示 link 标签'} language="markup" /><div className={`status-line ${error ? 'error' : ''}`}>{error || (source ? '透明背景会保留；可切换尺寸后分别下载' : '建议使用正方形透明 PNG 或 SVG 源图')}</div></div>
 }
 
 export function SvgOptimizerPage() {
   const [input, setInput] = useState('<svg width="100" height="100">\n  <!-- comment -->\n  <circle cx="50" cy="50" r="40" fill="#b8f35d" />\n</svg>')
   const output = input.replace(/<!--[\s\S]*?-->/g, '').replace(/>\s+</g, '><').replace(/\s{2,}/g, ' ').trim()
   return <div className="dual-editor"><EditorPanel label="SVG" value={input} onChange={setInput} /><EditorPanel label={`优化结果 · ${new Blob([output]).size} bytes`} value={output} readOnly actions={<CopyButton value={output} />} /></div>
-}
-
-const cronPresets = [['每分钟', '* * * * *'], ['每天 09:00', '0 9 * * *'], ['工作日 09:00', '0 9 * * 1-5'], ['每周一 09:00', '0 9 * * 1'], ['每月 1 日', '0 0 1 * *']] as const
-export function CronPage() {
-  const [expression, setExpression] = useState('0 9 * * 1-5')
-  const fields = expression.trim().split(/\s+/)
-  const explain = fields.length === 5 ? `分钟 ${fields[0]} · 小时 ${fields[1]} · 日期 ${fields[2]} · 月份 ${fields[3]} · 星期 ${fields[4]}` : 'Cron 表达式需要 5 个字段'
-  return <div className="stacked-workspace"><div className="workspace-toolbar">{cronPresets.map(([label, value]) => <button key={value} className={expression === value ? 'active' : ''} onClick={() => setExpression(value)}>{label}</button>)}</div><div className="cron-input"><span>cron</span><input value={expression} onChange={(event) => setExpression(event.target.value)} /></div><div className="status-line"><Check size={15} />{explain}</div></div>
 }
 
 function curlToJavascript(input: string) {
@@ -403,10 +415,18 @@ export function CurlToCodePage() {
 
 const loremWords = 'lorem ipsum dolor sit amet consectetur adipiscing elit integer viverra sapien sed lectus commodo pretium mauris feugiat nunc posuere dignissim libero'.split(' ')
 export function LoremPage() {
-  const [paragraphs, setParagraphs] = useState(3)
+  const [amount, setAmount] = useState(3)
+  const [unit, setUnit] = useState<'paragraphs' | 'sentences' | 'words'>('paragraphs')
+  const [classicStart, setClassicStart] = useState(true)
   const [output, setOutput] = useState('')
-  const generate = () => setOutput(Array.from({ length: paragraphs }, (_, paragraph) => Array.from({ length: 42 }, (_, index) => loremWords[(index + paragraph * 7) % loremWords.length]).join(' ').replace(/^./, (char) => char.toUpperCase()) + '.').join('\n\n'))
-  return <><div className="generator-controls"><label>段落数 <input type="number" min="1" max="10" value={paragraphs} onChange={(event) => setParagraphs(Math.max(1, Math.min(10, Number(event.target.value))))} /></label><button className="primary-action" onClick={generate}><WandSparkles size={15} />生成 Lorem Ipsum</button></div><EditorPanel label="占位文本" value={output} readOnly actions={<CopyButton value={output} />} /></>
+  const generate = () => {
+    const wordAt = (index: number) => loremWords[(index + (classicStart ? 0 : 7)) % loremWords.length]
+    if (unit === 'words') { setOutput(Array.from({ length: amount }, (_, index) => wordAt(index)).join(' ')); return }
+    const sentences = Array.from({ length: unit === 'sentences' ? amount : amount * 4 }, (_, sentence) => Array.from({ length: 10 + sentence % 5 }, (_, index) => wordAt(sentence * 7 + index)).join(' ').replace(/^./, (char) => char.toUpperCase()) + '.')
+    setOutput(unit === 'sentences' ? sentences.join(' ') : Array.from({ length: amount }, (_, paragraph) => sentences.slice(paragraph * 4, paragraph * 4 + 4).join(' ')).join('\n\n'))
+  }
+  const max = unit === 'words' ? 500 : unit === 'sentences' ? 50 : 20
+  return <><div className="generator-controls lorem-controls"><label>数量 <input type="number" min="1" max={max} value={amount} onChange={(event) => setAmount(Math.max(1, Math.min(max, Number(event.target.value))))} /></label><label>单位<select value={unit} onChange={(event) => { setUnit(event.target.value as typeof unit); setAmount(event.target.value === 'words' ? 80 : 3); setOutput('') }}><option value="paragraphs">段落</option><option value="sentences">句子</option><option value="words">单词</option></select></label><label className="check-label"><input type="checkbox" checked={classicStart} onChange={(event) => setClassicStart(event.target.checked)} />以 Lorem ipsum 开头</label><button className="primary-action" onClick={generate}><WandSparkles size={15} />生成 Lorem Ipsum</button></div><EditorPanel label="占位文本" value={output} readOnly actions={<CopyButton value={output} />} wrapLongLines /><div className="status-line">支持按段落、句子或单词生成，内容仅用于排版占位</div></>
 }
 
 const asciiRows = Array.from({ length: 95 }, (_, index) => index + 32)

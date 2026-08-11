@@ -1,5 +1,5 @@
 import { Heart, Maximize2, Minimize2, ShieldCheck } from 'lucide-react'
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import type { ToolDefinition } from '../types/tool'
 
 export default function ToolPageLayout({ tool, favorite, onFavorite, onBack }: {
@@ -9,8 +9,15 @@ export default function ToolPageLayout({ tool, favorite, onFavorite, onBack }: {
   onBack: () => void
 }) {
   const [fullPage, setFullPage] = useState(false)
+  const [supportsFullPage, setSupportsFullPage] = useState(Boolean(tool.fullPage))
+  const workspaceRef = useRef<HTMLDivElement>(null)
   const Icon = tool.icon
   const ToolComponent = tool.component
+
+  useLayoutEffect(() => {
+    setFullPage(false)
+    setSupportsFullPage(Boolean(tool.fullPage || workspaceRef.current?.querySelector('.dual-editor, .json-diff-inputs')))
+  }, [tool.id, tool.fullPage])
 
   useEffect(() => {
     if (!fullPage) return
@@ -37,11 +44,14 @@ export default function ToolPageLayout({ tool, favorite, onFavorite, onBack }: {
           </button>
         </div>
       </div>
-      <div className={`workspace ${tool.workspaceClassName || ''}`}>
-        {tool.fullPage && <button className="fullpage-toggle" onClick={() => setFullPage((value) => !value)} title={fullPage ? '退出全网页模式（Esc）' : '全网页打开'}>
+      <div ref={workspaceRef} className={`workspace ${supportsFullPage ? 'supports-fullpage' : ''} ${tool.workspaceClassName || ''}`}>
+        {supportsFullPage && (tool.fullPage ? <button className="fullpage-toggle" onClick={() => setFullPage((value) => !value)} title={fullPage ? '退出全网页模式（Esc）' : '全网页打开'}>
           {fullPage ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           <span>{fullPage ? '退出全屏' : '全网页'}</span>
-        </button>}
+        </button> : <div className="workspace-viewbar"><button className="workspace-fullpage-toggle" onClick={() => setFullPage((value) => !value)} title={fullPage ? '退出全网页模式（Esc）' : '全网页打开'}>
+          {fullPage ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          <span>{fullPage ? '退出全屏' : '全网页'}</span>
+        </button></div>)}
         <ToolComponent />
       </div>
       <div className="tool-note"><ShieldCheck size={17} /><span><strong>本地处理</strong>，输入内容不会发送到服务器。</span></div>

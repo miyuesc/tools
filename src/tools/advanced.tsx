@@ -465,6 +465,7 @@ export function JsonDiffPage() {
   const [left, setLeft] = useState('{"name":"Lumen","tools":36}')
   const [right, setRight] = useState('{"name":"Lumen","tools":70}')
   const [context, setContext] = useState<'3' | 'all'>('3')
+  const [hideSame, setHideSame] = useState(false)
   let leftPretty = ''; let rightPretty = ''; let error = ''
   try { leftPretty = jsonLines(left).join('\n'); rightPretty = jsonLines(right).join('\n') } catch { error = '请输入有效 JSON，差异结果会在两侧内容都有效后生成' }
   const leftLines = leftPretty.split('\n'), rightLines = rightPretty.split('\n')
@@ -472,7 +473,7 @@ export function JsonDiffPage() {
   const lines = error ? [] : createJsonDiff(leftLines, rightLines)
   const removed = lines.filter((line) => line.type === 'remove').length
   const added = lines.filter((line) => line.type === 'add').length
-  const visibleLines = context === 'all' ? lines : lines.filter((line, index) => line.type !== 'context' || lines.some((candidate, candidateIndex) => candidate.type !== 'context' && Math.abs(candidateIndex - index) <= 3))
+  const visibleLines = hideSame ? lines.filter((line) => line.type !== 'context') : context === 'all' ? lines : lines.filter((line, index) => line.type !== 'context' || lines.some((candidate, candidateIndex) => candidate.type !== 'context' && Math.abs(candidateIndex - index) <= 3))
   const diffText = lines.map((line) => `${line.type === 'add' ? '+' : line.type === 'remove' ? '-' : ' '} ${line.text}`).join('\n')
   const formatBoth = () => {
     try { setLeft(jsonLines(left).join('\n')) } catch { /* invalid input stays editable */ }
@@ -484,7 +485,8 @@ export function JsonDiffPage() {
     <div className="workspace-toolbar">
       <button className="primary-action" onClick={formatBoth}>格式化两侧</button>
       <button onClick={swap}>交换输入</button>
-      <select aria-label="差异上下文行" value={context} onChange={(event) => setContext(event.target.value as '3' | 'all')}><option value="3">3 行上下文</option><option value="all">全部上下文</option></select>
+      <select aria-label="差异上下文行" value={context} disabled={hideSame} onChange={(event) => setContext(event.target.value as '3' | 'all')}><option value="3">3 行上下文</option><option value="all">全部上下文</option></select>
+      <label className="toolbar-check"><input type="checkbox" checked={hideSame} onChange={(event) => setHideSame(event.target.checked)} />隐藏相同内容</label>
       <span className="toolbar-hint">左侧为基准，右侧为对比</span>
     </div>
     <div className="json-diff-inputs">
@@ -493,7 +495,7 @@ export function JsonDiffPage() {
     </div>
     <section className="json-diff-result" aria-live="polite">
       <div className="json-diff-result-head">
-        <div><span className="result-kicker">DIFF RESULT</span><strong>结构差异</strong><small>{error || (added || removed ? '仅显示新增、删除和上下文行' : '两份 JSON 内容一致')}</small></div>
+        <div><span className="result-kicker">DIFF RESULT</span><strong>结构差异</strong><small>{error || (added || removed ? hideSame ? '已隐藏全部相同内容' : '显示新增、删除和上下文行' : '两份 JSON 内容一致')}</small></div>
         <div className="diff-summary"><span className="summary-add">+{added} 新增</span><span className="summary-remove">−{removed} 删除</span>{!error && <CopyButton value={diffText} />}</div>
       </div>
       {error ? <div className="json-diff-empty error">{error}</div> : added === 0 && removed === 0 ? <div className="json-diff-empty">两份 JSON 完全一致，无需合并。</div> : <div className="json-diff-lines">{visibleLines.map((line, index) => <div className={`json-diff-line ${line.type}`} key={`${line.type}-${index}-${line.text}`}><code>{line.leftNumber ?? ''}</code><code>{line.rightNumber ?? ''}</code><span>{line.type === 'add' ? '+' : line.type === 'remove' ? '−' : '·'}</span><pre>{line.text}</pre></div>)}</div>}

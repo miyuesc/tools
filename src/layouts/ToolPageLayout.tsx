@@ -1,5 +1,5 @@
 import { Heart, Maximize2, Minimize2, ShieldCheck } from 'lucide-react'
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
+import { Suspense, useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 import type { ToolDefinition } from '../types/tool'
 
 export default function ToolPageLayout({ tool, favorite, onFavorite, onBack }: {
@@ -13,10 +13,24 @@ export default function ToolPageLayout({ tool, favorite, onFavorite, onBack }: {
   const workspaceRef = useRef<HTMLDivElement>(null)
   const Icon = tool.icon
   const ToolComponent = tool.component
+  const isWebWorkspace = tool.workspaceClassName?.split(/\s+/).includes('web-workspace')
+  const useWorkspaceViewbar = !tool.fullPage || isWebWorkspace
 
   useLayoutEffect(() => {
     setFullPage(false)
-    setSupportsFullPage(Boolean(tool.fullPage || workspaceRef.current?.querySelector('.dual-editor, .json-diff-inputs')))
+    setSupportsFullPage(Boolean(tool.fullPage))
+  }, [tool.id, tool.fullPage])
+
+  useEffect(() => {
+    const workspace = workspaceRef.current
+    if (!workspace || tool.fullPage) return
+    const updateSupport = () => {
+      setSupportsFullPage(Boolean(workspace.querySelector('.dual-editor, .json-diff-inputs')))
+    }
+    updateSupport()
+    const observer = new MutationObserver(updateSupport)
+    observer.observe(workspace, { childList: true, subtree: true })
+    return () => observer.disconnect()
   }, [tool.id, tool.fullPage])
 
   useEffect(() => {
@@ -33,7 +47,7 @@ export default function ToolPageLayout({ tool, favorite, onFavorite, onBack }: {
   }, [fullPage])
 
   return (
-    <div className={`tool-page page-enter ${fullPage ? 'is-fullpage' : ''}`} style={{ '--tool-accent': tool.accent } as CSSProperties}>
+    <div className={`tool-page page-enter ${fullPage ? 'is-fullpage' : ''} ${fullPage && isWebWorkspace ? 'is-document-fullpage' : ''}`} style={{ '--tool-accent': tool.accent } as CSSProperties}>
       <div className="tool-header">
         <button className="back-link" onClick={onBack}>← 所有工具</button>
         <div className="tool-title-line">
@@ -45,14 +59,19 @@ export default function ToolPageLayout({ tool, favorite, onFavorite, onBack }: {
         </div>
       </div>
       <div ref={workspaceRef} className={`workspace ${supportsFullPage ? 'supports-fullpage' : ''} ${tool.workspaceClassName || ''}`}>
-        {supportsFullPage && (tool.fullPage ? <button className="fullpage-toggle" onClick={() => setFullPage((value) => !value)} title={fullPage ? '退出全网页模式（Esc）' : '全网页打开'}>
+        {supportsFullPage && (!useWorkspaceViewbar ? <button className="fullpage-toggle" onClick={() => setFullPage((value) => !value)} title={fullPage ? '退出全网页模式（Esc）' : '全网页打开'}>
           {fullPage ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           <span>{fullPage ? '退出全屏' : '全网页'}</span>
         </button> : <div className="workspace-viewbar"><button className="workspace-fullpage-toggle" onClick={() => setFullPage((value) => !value)} title={fullPage ? '退出全网页模式（Esc）' : '全网页打开'}>
           {fullPage ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
           <span>{fullPage ? '退出全屏' : '全网页'}</span>
         </button></div>)}
-        <ToolComponent />
+        <Suspense fallback={<div className="tool-loading" role="status" aria-live="polite">
+          <span className="tool-loading-mark" />
+          <div><strong>正在载入工具</strong><small>仅加载当前工具所需代码…</small></div>
+        </div>}>
+          <ToolComponent />
+        </Suspense>
       </div>
       <div className="tool-note"><ShieldCheck size={17} /><span><strong>本地处理</strong>，输入内容不会发送到服务器。</span></div>
     </div>

@@ -24,7 +24,7 @@ export default function HomePage({ visibleTools, category, query, setQuery, open
       <section className="intro">
         <div className="eyebrow"><span>{tools.length} 个浏览器工具</span><span className="line" /></div>
         <h1>开发时常用的工具，<br /><em>都放在这里。</em></h1>
-        <p>处理 JSON 和图片，也能转换常见编码。无需登录，输入内容不会上传。</p>
+        <p>格式化代码、分析 Java 和 Go 堆栈，也能设计 CSS、SVG 与图片。无需登录，输入内容不会上传。</p>
       </section>
 
       <section className="quick-section">

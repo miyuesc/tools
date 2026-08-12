@@ -276,12 +276,14 @@ export function DockerComposePage() {
 
 export function CameraRecorderPage() {
   const videoRef = useRef<HTMLVideoElement>(null)
-  const [stream, setStream] = useState<MediaStream | null>(null)
   const [recording, setRecording] = useState(false)
   const [url, setUrl] = useState('')
   const [error, setError] = useState('')
   const [seconds, setSeconds] = useState(0)
   const recorderRef = useRef<MediaRecorder | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const urlRef = useRef('')
+  const mountedRef = useRef(true)
   const chunks = useRef<Blob[]>([])
 
   useEffect(() => {
@@ -290,16 +292,27 @@ export function CameraRecorderPage() {
     return () => window.clearInterval(timer)
   }, [recording])
   useEffect(() => () => {
-    recorderRef.current?.stream.getTracks().forEach((track) => track.stop())
-    if (url) URL.revokeObjectURL(url)
-  }, [url])
+    mountedRef.current = false
+    const recorder = recorderRef.current
+    if (recorder) {
+      recorder.ondataavailable = null
+      recorder.onstop = null
+      if (recorder.state !== 'inactive') recorder.stop()
+    }
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    if (videoRef.current) videoRef.current.srcObject = null
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current)
+    chunks.current = []
+  }, [])
 
   const start = async () => {
     setError('')
+    let next: MediaStream | null = null
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error('当前浏览器不支持摄像头录制')
-      const next = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      setStream(next)
+      next = await navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      if (!mountedRef.current) { next.getTracks().forEach((track) => track.stop()); return }
+      streamRef.current = next
       if (videoRef.current) { videoRef.current.srcObject = next; await videoRef.current.play() }
       chunks.current = []
       setSeconds(0)
@@ -307,20 +320,26 @@ export function CameraRecorderPage() {
       recorder.ondataavailable = (event) => { if (event.data.size) chunks.current.push(event.data) }
       recorder.onstop = () => {
         const nextUrl = URL.createObjectURL(new Blob(chunks.current, { type: recorder.mimeType }))
-        setUrl((previous) => { if (previous) URL.revokeObjectURL(previous); return nextUrl })
+        if (!mountedRef.current) { URL.revokeObjectURL(nextUrl); return }
+        if (urlRef.current) URL.revokeObjectURL(urlRef.current)
+        urlRef.current = nextUrl
+        setUrl(nextUrl)
       }
       recorder.start()
       recorderRef.current = recorder
       setRecording(true)
     } catch (cause) {
-      setError(cause instanceof DOMException && cause.name === 'NotAllowedError' ? '摄像头或麦克风权限被拒绝，请在浏览器站点设置中允许后重试' : dataError(cause, '无法启动摄像头'))
+      next?.getTracks().forEach((track) => track.stop())
+      if (streamRef.current === next) streamRef.current = null
+      if (videoRef.current) videoRef.current.srcObject = null
+      if (mountedRef.current) setError(cause instanceof DOMException && cause.name === 'NotAllowedError' ? '摄像头或麦克风权限被拒绝，请在浏览器站点设置中允许后重试' : dataError(cause, '无法启动摄像头'))
     }
   }
   const stop = () => {
     if (recorderRef.current?.state !== 'inactive') recorderRef.current?.stop()
-    stream?.getTracks().forEach((track) => track.stop())
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
     if (videoRef.current) videoRef.current.srcObject = null
-    setStream(null)
     setRecording(false)
   }
   return <div className="camera-tool"><video ref={videoRef} muted playsInline /><div className="workspace-toolbar"><button className="primary-action" onClick={recording ? stop : start}>{recording ? `停止录制 · ${seconds}s` : '开始摄像头录制'}</button>{url && <a className="download-link" href={url} download="lumen-recording.webm">下载 WebM</a>}</div><div className={`status-line ${error ? 'error' : ''}`}>{error || (recording ? '正在本地录制，离开页面会自动释放摄像头和麦克风' : '需要浏览器授权；媒体内容只在当前页面处理')}</div></div>

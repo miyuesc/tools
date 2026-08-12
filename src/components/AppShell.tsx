@@ -2,11 +2,15 @@ import {
   ArrowLeftRight,
   BookOpen,
   Code2,
+  FileCode2,
+  FileJson,
   Github,
+  Globe2,
   Images,
   Menu,
   Moon,
   Network,
+  Palette,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
@@ -15,6 +19,7 @@ import {
   Sun,
   TextCursorInput,
   WandSparkles,
+  Workflow,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import ToolPageLayout from '../layouts/ToolPageLayout'
@@ -25,15 +30,21 @@ import CommandPalette from './CommandPalette'
 
 const categories = [
   { label: '全部工具', icon: Sparkles },
-  { label: '图片', icon: Images },
-  { label: '开发', icon: Code2 },
-  { label: '编码', icon: ArrowLeftRight },
-  { label: '文本', icon: TextCursorInput },
-  { label: '生成', icon: WandSparkles },
-  { label: '转换', icon: ArrowLeftRight },
-  { label: '参考', icon: BookOpen },
-  { label: '安全', icon: ShieldCheck },
-  { label: '网络', icon: Network },
+  { label: 'JavaScript', icon: Code2 },
+  { label: 'Node.js', icon: FileJson },
+  { label: 'Java', icon: FileCode2 },
+  { label: 'Go', icon: FileCode2 },
+  { label: 'CSS 设计', icon: Palette },
+  { label: 'SVG 图形', icon: Workflow },
+  { label: '图片媒体', icon: Images },
+  { label: '数据格式', icon: FileJson },
+  { label: '编码转换', icon: ArrowLeftRight },
+  { label: '文本处理', icon: TextCursorInput },
+  { label: '安全加密', icon: ShieldCheck },
+  { label: '网络工具', icon: Network },
+  { label: '系统运维', icon: Globe2 },
+  { label: '生成计算', icon: WandSparkles },
+  { label: '开发参考', icon: BookOpen },
 ] as const
 
 const readIds = (key: string): ToolId[] => {

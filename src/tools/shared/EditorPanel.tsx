@@ -2,6 +2,8 @@ import { Check, ClipboardX, Copy } from 'lucide-react'
 import Prism from 'prismjs'
 import 'prismjs/components/prism-bash'
 import 'prismjs/components/prism-css'
+import 'prismjs/components/prism-go'
+import 'prismjs/components/prism-java'
 import 'prismjs/components/prism-javascript'
 import 'prismjs/components/prism-json'
 import 'prismjs/components/prism-markdown'
@@ -12,10 +14,10 @@ import 'prismjs/components/prism-typescript'
 import 'prismjs/components/prism-yaml'
 import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type UIEvent } from 'react'
 
-export type EditorLanguage = 'plain' | 'json' | 'yaml' | 'markup' | 'css' | 'javascript' | 'typescript' | 'sql' | 'bash' | 'markdown' | 'toml'
+export type EditorLanguage = 'plain' | 'json' | 'yaml' | 'markup' | 'css' | 'javascript' | 'typescript' | 'java' | 'go' | 'sql' | 'bash' | 'markdown' | 'toml'
 
 const languageNames: Record<EditorLanguage, string> = {
-  plain: 'TEXT', json: 'JSON', yaml: 'YAML', markup: 'MARKUP', css: 'CSS', javascript: 'JS', typescript: 'TS', sql: 'SQL', bash: 'SHELL', markdown: 'MD', toml: 'TOML',
+  plain: 'TEXT', json: 'JSON', yaml: 'YAML', markup: 'MARKUP', css: 'CSS', javascript: 'JS', typescript: 'TS', java: 'JAVA', go: 'GO', sql: 'SQL', bash: 'SHELL', markdown: 'MD', toml: 'TOML',
 }
 
 function inferLanguage(label: string): EditorLanguage {

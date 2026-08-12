@@ -8,6 +8,7 @@ import {
   FileDiff,
   FileImage,
   Fingerprint,
+  Grid2X2,
   Hash,
   FileJson,
   FileType2,
@@ -27,27 +28,91 @@ import {
   WandSparkles,
   Workflow,
 } from 'lucide-react'
+import { lazy, type ComponentType, type LazyExoticComponent } from 'react'
 import type { ToolDefinition } from '../types/tool'
-import Base64ToolPage from './base64'
-import ColorToolPage from './color'
-import CronPage from './cron'
-import HashToolPage from './hash'
-import ImageStudioPage from './image-studio'
-import JsonToolPage from './json'
-import JwtToolPage from './jwt'
-import MermaidEditorPage from './mermaid'
-import QrCodePage from './qr'
-import RegexToolPage from './regex'
-import RegexMemoPage from './regex-memo'
-import TextToolPage from './text'
-import TimestampToolPage from './timestamp'
-import UrlToolPage from './url'
-import UuidToolPage from './uuid'
-import GitMemoPage from './git-memo'
-import SvgPlaceholderPage from './svg-placeholder'
-import UrlParserPage from './url-parser'
-import YamlWorkbenchPage from './yaml-workbench'
-import {
+
+type PageModule = Record<string, ComponentType>
+
+function lazyDefault(load: () => Promise<{ default: ComponentType }>) {
+  return lazy(load)
+}
+
+function createLazyPages<const Names extends readonly string[]>(
+  load: () => Promise<unknown>,
+  names: Names,
+) {
+  return Object.fromEntries(names.map((name) => [
+    name,
+    lazy(() => load().then((module) => ({ default: (module as PageModule)[name] }))),
+  ])) as { [Name in Names[number]]: LazyExoticComponent<ComponentType> }
+}
+
+const Base64ToolPage = lazyDefault(() => import('./base64'))
+const ColorToolPage = lazyDefault(() => import('./color'))
+const CronPage = lazyDefault(() => import('./cron'))
+const HashToolPage = lazyDefault(() => import('./hash'))
+const ImageStudioPage = lazyDefault(() => import('./image-studio'))
+const JsonToolPage = lazyDefault(() => import('./json'))
+const JwtToolPage = lazyDefault(() => import('./jwt'))
+const MermaidEditorPage = lazyDefault(() => import('./mermaid'))
+const QrCodePage = lazyDefault(() => import('./qr'))
+const RegexToolPage = lazyDefault(() => import('./regex'))
+const RegexMemoPage = lazyDefault(() => import('./regex-memo'))
+const TextToolPage = lazyDefault(() => import('./text'))
+const TimestampToolPage = lazyDefault(() => import('./timestamp'))
+const UrlToolPage = lazyDefault(() => import('./url'))
+const UuidToolPage = lazyDefault(() => import('./uuid'))
+const GitMemoPage = lazyDefault(() => import('./git-memo'))
+const SvgPlaceholderPage = lazyDefault(() => import('./svg-placeholder'))
+const UrlParserPage = lazyDefault(() => import('./url-parser'))
+const YamlWorkbenchPage = lazyDefault(() => import('./yaml-workbench'))
+
+const { FluidTypePage, EasedGradientPage } = createLazyPages(
+  () => import('./web-design/type-gradient'),
+  ['FluidTypePage', 'EasedGradientPage'] as const,
+)
+const { ShapeOutsidePage, HudFramePage } = createLazyPages(
+  () => import('./web-design/shape-hud'),
+  ['ShapeOutsidePage', 'HudFramePage'] as const,
+)
+const {
+  BorderRadiusPage,
+  BoxShadowPage,
+  ButtonStatePage,
+  TextShadowPage,
+} = createLazyPages(
+  () => import('./web-design/button-shadow-radius'),
+  ['BorderRadiusPage', 'BoxShadowPage', 'ButtonStatePage', 'TextShadowPage'] as const,
+)
+const { SvgPathEditorPage } = createLazyPages(
+  () => import('./web-design/svg-path'),
+  ['SvgPathEditorPage'] as const,
+)
+
+const {
+  CodeFormatterPage,
+  GoGoroutinePage,
+  JavaStackTracePage,
+  JsonToGoPage,
+  JsonToJavaPage,
+  PackageJsonPage,
+  SemVerPage,
+} = createLazyPages(
+  () => import('./first-batch/language-tools'),
+  ['CodeFormatterPage', 'GoGoroutinePage', 'JavaStackTracePage', 'JsonToGoPage', 'JsonToJavaPage', 'PackageJsonPage', 'SemVerPage'] as const,
+)
+const {
+  CssLayoutPage,
+  CssTransformFilterPage,
+  KeyframesBezierPage,
+  SvgSpritePage,
+  WcagContrastPage,
+} = createLazyPages(
+  () => import('./first-batch/design-tools'),
+  ['CssLayoutPage', 'CssTransformFilterPage', 'KeyframesBezierPage', 'SvgSpritePage', 'WcagContrastPage'] as const,
+)
+
+const {
   Base64FilePage,
   BasicAuthPage,
   ChronometerPage,
@@ -95,8 +160,22 @@ import {
   YamlJsonPage,
   EtaPage,
   EncryptionPage,
-} from './advanced'
-import {
+} = createLazyPages(
+  () => import('./advanced'),
+  [
+    'Base64FilePage', 'BasicAuthPage', 'ChronometerPage', 'DeviceInfoPage', 'DockerComposePage',
+    'EmailNormalizerPage', 'EmojiPickerPage', 'HmacPage', 'IbanPage', 'Ipv4AddressPage',
+    'Ipv4RangePage', 'Ipv4SubnetPage', 'Ipv6UlaPage', 'JsonCsvPage', 'JsonDiffPage',
+    'JsonTomlPage', 'JsonYamlPage', 'JsonXmlPage', 'CameraRecorderPage', 'SafeLinkPage',
+    'MacLookupPage', 'BenchmarkPage', 'RsaKeyPage', 'KeycodePage', 'ListConverterPage',
+    'MacGeneratorPage', 'MathEvaluatorPage', 'MetaTagPage', 'NatoPage', 'NumeronymPage',
+    'ObfuscatorPage', 'OtpPage', 'PasswordStrengthPage', 'PercentagePage', 'RandomPortPage',
+    'SlugifyPage', 'TemperaturePage', 'TomlJsonPage', 'TomlYamlPage', 'TokenPage', 'UlidPage',
+    'UnicodePage', 'UserAgentPage', 'XmlJsonPage', 'YamlJsonPage', 'EtaPage', 'EncryptionPage',
+  ] as const,
+)
+
+const {
   CaseConverterPage,
   AsciiTablePage,
   BinaryTextPage,
@@ -120,10 +199,40 @@ import {
   TextCleanerPage,
   XmlToolPage,
   LoremPage,
-} from './extended'
+} = createLazyPages(
+  () => import('./extended'),
+  [
+    'CaseConverterPage', 'AsciiTablePage', 'BinaryTextPage', 'ChmodPage', 'CurlToCodePage',
+    'DiffToolPage', 'FaviconGeneratorPage', 'HtmlToolPage', 'HtmlEntitiesPage', 'HttpStatusPage',
+    'ImageBase64Page', 'ImageConverterPage', 'JsonTypesToolPage', 'MarkdownToolPage',
+    'MimeTypePage', 'NumberBasePage', 'PasswordGeneratorPage', 'RomanNumeralPage', 'SqlToolPage',
+    'SvgOptimizerPage', 'TextCleanerPage', 'XmlToolPage', 'LoremPage',
+  ] as const,
+)
 
-export const tools: ToolDefinition[] = [
+const rawTools: Array<Omit<ToolDefinition, 'category'> & { category: string }> = [
+  { id: 'code-formatter', name: 'JS / TS / JSX / CSS 格式化器', description: '使用本地 Prettier 格式化 JavaScript、TypeScript、JSX、TSX 与 CSS', category: '语言', icon: FileCode2, tags: ['javascript', 'typescript', 'jsx', 'tsx', 'css', 'prettier', '格式化'], accent: '#f7df1e', component: CodeFormatterPage, featured: true },
+  { id: 'json-java', name: 'JSON 转 Java', description: '从 JSON 推断并生成 Record、POJO 或 Lombok 数据模型', category: '语言', icon: Braces, tags: ['java', 'json', 'record', 'pojo', 'lombok', 'jackson'], accent: '#f59e42', component: JsonToJavaPage },
+  { id: 'json-go', name: 'JSON 转 Go Struct', description: '从 JSON 生成嵌套 Struct、字段标签、指针与 time.Time', category: '语言', icon: Braces, tags: ['go', 'golang', 'json', 'struct', 'tag'], accent: '#59d4e8', component: JsonToGoPage },
+  { id: 'package-json', name: 'package.json 构建与检查', description: '编辑包元数据、检查结构冲突并整理字段和依赖顺序', category: '语言', icon: FileJson, tags: ['node', 'npm', 'package.json', 'dependencies', 'scripts'], accent: '#cb3837', component: PackageJsonPage, featured: true },
+  { id: 'semver', name: 'SemVer 计算器', description: '验证、排序版本，测试范围并计算 major、minor、patch 升级', category: '语言', icon: Sigma, tags: ['semver', 'node', 'npm', 'version', 'range'], accent: '#c7f36c', component: SemVerPage },
+  { id: 'java-stack-trace', name: 'Java Stack Trace 分析', description: '识别异常链、根因和业务调用帧，生成精简报告', category: '语言', icon: FileDiff, tags: ['java', 'stack trace', 'exception', 'root cause', 'debug'], accent: '#ff9f68', component: JavaStackTracePage },
+  { id: 'go-goroutine-dump', name: 'Go Goroutine Dump 分析', description: '解析 Goroutine 状态、重复堆栈与阻塞调用位置', category: '语言', icon: ListTree, tags: ['go', 'golang', 'goroutine', 'dump', 'stack'], accent: '#5dd6e8', component: GoGoroutinePage },
+  { id: 'css-layout', name: 'CSS Grid / Flexbox 构建器', description: '可视化组合 Grid 与 Flexbox 容器并复制完整 CSS', category: '设计', icon: Grid2X2, tags: ['css', 'grid', 'flexbox', 'layout', '布局'], accent: '#b8f35d', component: CssLayoutPage, fullPage: true, workspaceClassName: 'web-workspace' },
+  { id: 'css-transform-filter', name: 'CSS Transform / Filter 编辑器', description: '组合 2D/3D 变换、滤镜与 backdrop-filter 并实时预览', category: '设计', icon: WandSparkles, tags: ['css', 'transform', 'filter', '3d', 'backdrop'], accent: '#7df9ff', component: CssTransformFilterPage, fullPage: true, workspaceClassName: 'web-workspace' },
+  { id: 'keyframes-bezier', name: 'Keyframes 与 Bézier 编辑器', description: '编辑关键帧、动画时长和三次贝塞尔缓动曲线', category: '设计', icon: Workflow, tags: ['css', 'animation', 'keyframes', 'cubic-bezier', 'motion'], accent: '#c4a7ff', component: KeyframesBezierPage, fullPage: true, workspaceClassName: 'web-workspace' },
+  { id: 'wcag-contrast', name: 'WCAG 颜色对比检查', description: '计算对比度并检查 WCAG 2.2 的 AA、AAA 与非文本要求', category: '设计', icon: ShieldCheck, tags: ['wcag', 'accessibility', 'contrast', 'color', 'a11y'], accent: '#f2d45c', component: WcagContrastPage, fullPage: true, workspaceClassName: 'web-workspace' },
+  { id: 'svg-sprite', name: 'SVG Sprite 生成器', description: '导入多个本地 SVG，生成 symbol Sprite、引用代码并下载', category: '设计', icon: Images, tags: ['svg', 'sprite', 'symbol', 'icon', 'use'], accent: '#ff6fae', component: SvgSpritePage, fullPage: true, workspaceClassName: 'web-workspace' },
   { id: 'image-studio', name: '图片裁剪与拼接', description: '编辑、拼接图片，复制或导出透明 PNG', category: '图片', icon: Images, tags: ['图片', '裁剪', '拼接', 'png', 'canvas'], accent: '#b8f35d', component: ImageStudioPage, featured: true, fullPage: true, workspaceClassName: 'image-workspace' },
+  { id: 'fluid-type', name: '流体排版', description: '生成完整模块化字阶与视口/容器 clamp() 变量', category: 'Web', icon: Type, tags: ['css', 'fluid type', 'clamp', 'responsive', '排版'], accent: '#b8f35d', component: FluidTypePage, featured: true, fullPage: true, workspaceClassName: 'web-workspace' },
+  { id: 'eased-gradient', name: '缓动渐变', description: '用可控缓动和色阶生成顺滑 CSS 渐变', category: 'Web', icon: Palette, tags: ['css', 'gradient', 'easing', 'color'], accent: '#ff6fae', component: EasedGradientPage, fullPage: true, workspaceClassName: 'web-workspace' },
+  { id: 'shape-outside', name: 'CSS Shape 编辑器', description: '用径向参数或自由节点生成 shape() 与 shape-outside', category: 'Web', icon: Workflow, tags: ['css', 'shape', 'shape-outside', 'polygon'], accent: '#f2d45c', component: ShapeOutsidePage, fullPage: true, workspaceClassName: 'web-workspace' },
+  { id: 'hud-frame', name: 'HUD SVG 边框', description: '生成带切角、数据节点和辉光的科幻 SVG 框', category: 'Web', icon: Images, tags: ['svg', 'hud', 'frame', 'sci-fi', 'generator'], accent: '#7df9ff', component: HudFramePage, fullPage: true, workspaceClassName: 'web-workspace' },
+  { id: 'button-state', name: '按钮状态构建器', description: '设计五种业务状态、模拟流程并导出 HTML/CSS/JS', category: 'Web', icon: WandSparkles, tags: ['css', 'button', 'loading', 'success', 'error', 'disabled'], accent: '#b8f35d', component: ButtonStatePage, fullPage: true, workspaceClassName: 'web-workspace' },
+  { id: 'box-shadow', name: '盒阴影生成器', description: '叠加多层 box-shadow 并实时预览', category: 'Web', icon: Code2, tags: ['css', 'box-shadow', 'shadow'], accent: '#9fb9ff', component: BoxShadowPage, fullPage: true, workspaceClassName: 'web-workspace' },
+  { id: 'text-shadow', name: '文字阴影生成器', description: '组合多层文字阴影与霓虹效果', category: 'Web', icon: Type, tags: ['css', 'text-shadow', 'type', 'neon'], accent: '#7df9ff', component: TextShadowPage, fullPage: true, workspaceClassName: 'web-workspace' },
+  { id: 'border-radius', name: '圆角生成器', description: '编辑八轴椭圆圆角并复制 border-radius', category: 'Web', icon: Sigma, tags: ['css', 'border-radius', 'corner', 'blob'], accent: '#c7f36c', component: BorderRadiusPage, fullPage: true, workspaceClassName: 'web-workspace' },
+  { id: 'svg-path-editor', name: 'SVG Path 编辑器', description: '逐命令编辑、变换和优化路径并导出完整 SVG', category: 'Web', icon: Workflow, tags: ['svg', 'path', 'vector', 'editor'], accent: '#c4a7ff', component: SvgPathEditorPage, fullPage: true, workspaceClassName: 'web-workspace' },
   { id: 'json', name: 'JSON 工作台', description: '格式化、排序、压缩和检查 JSON', category: '开发', icon: Braces, tags: ['json', '格式化', 'validate'], accent: '#b8f35d', component: JsonToolPage, featured: true, sourceId: 'json-viewer' },
   { id: 'base64', name: 'Base64 编解码', description: '编码或解码 UTF-8 文本', category: '编码', icon: ArrowLeftRight, tags: ['base64', '编码', '解码'], accent: '#8ad8ff', component: Base64ToolPage, featured: true, sourceId: 'base64-string-converter' },
   { id: 'url', name: 'URL 编解码', description: '编码或解码文本、URL 及其中的参数值', category: '编码', icon: Link2, tags: ['url', 'encode', 'decode'], accent: '#c4a7ff', component: UrlToolPage, sourceId: 'url-encoder' },
@@ -214,5 +323,31 @@ export const tools: ToolDefinition[] = [
   { id: 'rsa-key-pair', name: 'RSA 密钥对生成器', description: '使用 Web Crypto 生成可复制的 RSA-OAEP PEM 密钥', category: '安全', icon: KeyRound, tags: ['rsa', 'key', 'crypto'], accent: '#d0adff', component: RsaKeyPage, sourceId: 'rsa-key-pair-generator' },
   { id: 'json-minify', name: 'JSON 压缩器', description: '移除 JSON 空白并复制压缩结果', category: '开发', icon: Braces, tags: ['json', 'minify', '压缩'], accent: '#b8f35d', component: JsonToolPage, sourceId: 'json-minify' },
 ]
+
+const categoryAssignments = {
+  JavaScript: ['code-formatter', 'json-types', 'curl-to-code', 'benchmark'],
+  'Node.js': ['package-json', 'semver'],
+  Java: ['json-java', 'java-stack-trace'],
+  Go: ['json-go', 'go-goroutine-dump'],
+  'CSS 设计': ['fluid-type', 'eased-gradient', 'shape-outside', 'button-state', 'box-shadow', 'text-shadow', 'border-radius', 'css-layout', 'css-transform-filter', 'keyframes-bezier', 'wcag-contrast', 'color'],
+  'SVG 图形': ['hud-frame', 'svg-path-editor', 'svg-optimizer', 'svg-placeholder', 'svg-sprite', 'mermaid'],
+  图片媒体: ['image-studio', 'image-base64', 'image-converter', 'favicon', 'qr-code', 'camera-recorder'],
+  数据格式: ['json', 'json-minify', 'json-diff', 'html', 'xml', 'sql', 'json-csv', 'json-xml', 'xml-json', 'json-yaml', 'yaml-json', 'yaml-viewer', 'json-toml', 'toml-json', 'toml-yaml'],
+  编码转换: ['base64', 'url', 'number-base', 'html-entities', 'binary-text', 'base64-file', 'obfuscator', 'unicode'],
+  文本处理: ['text', 'diff', 'case', 'text-cleaner', 'markdown', 'lorem', 'email-normalizer', 'emoji-picker', 'list-converter', 'numeronym', 'slugify', 'nato'],
+  安全加密: ['jwt', 'hash', 'password', 'basic-auth', 'hmac', 'otp', 'password-strength', 'encryption', 'rsa-key-pair', 'token'],
+  网络工具: ['url-parser', 'ipv4-address', 'ipv4-range', 'ipv4-subnet', 'ipv6-ula', 'mac-generator', 'random-port', 'user-agent', 'safe-link', 'mac-lookup'],
+  系统运维: ['chmod', 'cron', 'docker-compose', 'git-memo'],
+  生成计算: ['uuid', 'timestamp', 'roman', 'chronometer', 'percentage', 'temperature', 'ulid', 'math-evaluator', 'eta-calculator'],
+  开发参考: ['regex', 'http-status', 'mime', 'ascii', 'device-info', 'iban', 'keycode', 'meta-tags', 'regex-memo'],
+} as const satisfies Record<import('../types/tool').Category, readonly import('../types/tool').ToolId[]>
+
+const categoryById = new Map(Object.entries(categoryAssignments).flatMap(([category, ids]) => ids.map((id) => [id, category])))
+
+export const tools: ToolDefinition[] = rawTools.map((tool) => {
+  const category = categoryById.get(tool.id)
+  if (!category) throw new Error(`Tool ${tool.id} is missing a category assignment`)
+  return { ...tool, category: category as ToolDefinition['category'] }
+})
 
 export const getTool = (id: string | null) => tools.find((tool) => tool.id === id)

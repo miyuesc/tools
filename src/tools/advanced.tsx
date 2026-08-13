@@ -4,6 +4,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml'
 import { CopyButton, EditorPanel } from './shared/EditorPanel'
 import { FileDropZone } from './shared/FileDropZone'
 import { formatBytes } from './shared/fileUtils'
+import { excludeCidrs, intIpv4, ipv4Int, ipv4Parts, mergeCidrs, parseIpv4Cidr, splitCidr } from './ipv4'
 
 function toBase64(bytes: Uint8Array) { let binary = ''; for (let index = 0; index < bytes.length; index += 0x8000) binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000)); return btoa(binary) }
 function fromBase64(value: string) { const compact = value.replace(/\s+/g, ''); if (!/^[A-Za-z0-9+/]*={0,2}$/.test(compact) || compact.length % 4 === 1) throw new Error('Base64 格式无效'); return Uint8Array.from(atob(compact), (char) => char.charCodeAt(0)) }
@@ -83,9 +84,6 @@ export function IbanPage() {
   return <div className="stacked-workspace"><EditorPanel label="IBAN" value={input} onChange={setInput} /><div className={`status-line ${ibanValid(input) ? '' : 'error'}`}>{ibanValid(input) ? 'IBAN 校验通过（MOD-97）' : 'IBAN 格式或校验码无效'}</div><div className="result-lines"><div><span>标准格式</span><code>{normalized.replace(/(.{4})/g, '$1 ').trim()}</code><CopyButton value={normalized} /></div></div></div>
 }
 
-function ipv4Parts(value: string) { const parts = value.trim().split('.').map(Number); return parts.length === 4 && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) ? parts : null }
-function ipv4Int(parts: number[]) { return (((parts[0] * 256 + parts[1]) * 256 + parts[2]) * 256 + parts[3]) >>> 0 }
-function intIpv4(value: number) { return [value >>> 24, (value >>> 16) & 255, (value >>> 8) & 255, value & 255].join('.') }
 export function Ipv4AddressPage() {
   const [input, setInput] = useState('192.168.1.10')
   const parts = ipv4Parts(input); const number = parts ? ipv4Int(parts) : 0
@@ -96,15 +94,45 @@ export function Ipv4AddressPage() {
 export function Ipv4RangePage() {
   const [start, setStart] = useState('192.168.1.1'); const [end, setEnd] = useState('192.168.1.8')
   const a = ipv4Parts(start), b = ipv4Parts(end); const first = a ? ipv4Int(a) : 0; const last = b ? ipv4Int(b) : 0; const count = last >= first ? last - first + 1 : 0
-  const values = count > 0 && count <= 256 ? Array.from({ length: count }, (_, index) => intIpv4(first + index)) : []
-  return <div className="stacked-workspace"><div className="form-grid"><label>起始地址<input value={start} onChange={(event) => setStart(event.target.value)} /></label><label>结束地址<input value={end} onChange={(event) => setEnd(event.target.value)} /></label></div><div className="reference-tool"><div className="panel-label"><span>地址列表</span><span>{count > 256 ? '范围过大，仅支持 256 个以内' : `${values.length} 个地址`}</span></div><div className="result-lines">{values.map((value) => <div key={value}><span>IPv4</span><code>{value}</code><CopyButton value={value} /></div>)}</div></div></div>
+  const visibleCount = Math.min(count, 256)
+  const values = count > 0 ? Array.from({ length: visibleCount }, (_, index) => intIpv4(first + index)) : []
+  const invalid = !a || !b ? '起始和结束值都必须是有效 IPv4 地址' : last < first ? '结束地址不能小于起始地址' : ''
+  return <div className="stacked-workspace"><div className="form-grid"><label>起始地址<input value={start} onChange={(event) => setStart(event.target.value)} /></label><label>结束地址<input value={end} onChange={(event) => setEnd(event.target.value)} /></label></div><div className="reference-tool"><div className="panel-label"><span>地址预览</span><span>{invalid || `${count.toLocaleString()} 个地址${count > visibleCount ? ` · 仅显示前 ${visibleCount}` : ''}`}</span></div><div className="result-lines ipv4-address-preview">{values.map((value) => <div key={value}><span>IPv4</span><code>{value}</code><CopyButton value={value} /></div>)}</div></div><div className={`status-line ${invalid ? 'error' : count > visibleCount ? 'warning' : ''}`}>{invalid || (count > visibleCount ? '为避免页面卡顿，不会一次渲染完整的大地址范围；请使用 CIDR 工具表达网段' : '范围边界已校验')}</div></div>
 }
 
 export function Ipv4SubnetPage() {
+  const [mode, setMode] = useState<'inspect' | 'merge' | 'split' | 'exclude'>('inspect')
   const [input, setInput] = useState('192.168.10.42/24')
-  const [address, prefixText] = input.split('/'); const parts = ipv4Parts(address); const prefix = Number(prefixText); const valid = Boolean(parts && prefix >= 0 && prefix <= 32); const value = parts ? ipv4Int(parts) : 0; const mask = valid ? (prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0) : 0; const network = value & mask; const broadcast = (network | (~mask >>> 0)) >>> 0
-  const values = valid ? [['网络地址', intIpv4(network)], ['广播地址', intIpv4(broadcast)], ['子网掩码', intIpv4(mask)], ['可用地址数', String(prefix >= 31 ? Math.max(0, 2 ** (32 - prefix)) : Math.max(0, 2 ** (32 - prefix) - 2))]] : []
-  return <div className="stacked-workspace"><EditorPanel label="CIDR" value={input} onChange={setInput} /><div className="result-lines">{values.map(([label, item]) => <div key={label}><span>{label}</span><code>{item}</code><CopyButton value={item} /></div>)}</div>{!valid && <div className="status-line error">格式示例：192.168.1.0/24</div>}</div>
+  const [exclusions, setExclusions] = useState('192.168.10.64/26\n192.168.10.200')
+  const [targetPrefix, setTargetPrefix] = useState(26)
+  let output: string[] = [], error = '', normalized = '', details: Array<[string, string]> = []
+  try {
+    if (mode === 'inspect') {
+      const parsed = parseIpv4Cidr(input)
+      normalized = parsed.cidr
+      const mask = parsed.prefix === 0 ? 0 : (0xffffffff << (32 - parsed.prefix)) >>> 0
+      details = [['规范 CIDR', parsed.cidr], ['网络地址', intIpv4(parsed.start)], ['广播地址', intIpv4(parsed.end)], ['子网掩码', intIpv4(mask)], ['地址数量', (parsed.end - parsed.start + 1).toLocaleString()]]
+    } else if (mode === 'merge') output = mergeCidrs(input)
+    else if (mode === 'split') output = splitCidr(input.trim(), targetPrefix)
+    else output = excludeCidrs(input, exclusions)
+  } catch (cause) { error = cause instanceof Error ? cause.message : 'CIDR 计算失败' }
+  const visible = output.slice(0, 256)
+  const outputText = output.join('\n')
+  const changeMode = (next: typeof mode) => {
+    setMode(next)
+    if (next === 'inspect') setInput('192.168.10.42/24')
+    if (next === 'merge') setInput('192.168.10.0/25\n192.168.10.128/26\n192.168.10.192/26')
+    if (next === 'split') setInput('10.0.0.0/24')
+    if (next === 'exclude') setInput('192.168.10.0/24')
+  }
+  return <div className="stacked-workspace ipv4-cidr-tool">
+    <div className="workspace-toolbar segmented"><button className={mode === 'inspect' ? 'active' : ''} onClick={() => changeMode('inspect')}>计算</button><button className={mode === 'merge' ? 'active' : ''} onClick={() => changeMode('merge')}>合并</button><button className={mode === 'split' ? 'active' : ''} onClick={() => changeMode('split')}>拆分</button><button className={mode === 'exclude' ? 'active' : ''} onClick={() => changeMode('exclude')}>排除</button><span className="toolbar-hint">接受 IPv4 或 CIDR；裸地址按 /32 处理</span></div>
+    <EditorPanel label={mode === 'merge' ? '待合并 CIDR（每行一个）' : mode === 'exclude' ? '原始地址 / 网段' : 'CIDR'} value={input} onChange={setInput} />
+    {mode === 'split' && <div className="form-grid"><label>目标前缀<input type="number" min="0" max="32" value={targetPrefix} onChange={(event) => setTargetPrefix(Number(event.target.value))} /></label></div>}
+    {mode === 'exclude' && <EditorPanel label="需要排除的地址 / 网段" value={exclusions} onChange={setExclusions} />}
+    {mode === 'inspect' ? <div className="result-lines cidr-details">{details.map(([label, item]) => <div key={label}><span>{label}</span><code>{item}</code><CopyButton value={item} /></div>)}</div> : <div className="reference-tool"><div className="panel-label"><span>结果网段</span><span>{error || `${output.length} 个 CIDR${visible.length < output.length ? ` · 显示前 ${visible.length}` : ''}`}</span></div><div className="result-lines cidr-output">{visible.map((item) => <div key={item}><span>CIDR</span><code>{item}</code><CopyButton value={item} /></div>)}</div>{outputText && <div className="workspace-toolbar"><CopyButton value={outputText} /><span className="toolbar-hint">复制全部 {output.length} 个网段</span></div>}</div>}
+    <div className={`status-line ${error ? 'error' : output.length > visible.length ? 'warning' : ''}`}>{error || (mode === 'inspect' ? (normalized !== input.trim() ? `输入含主机位，已规范化为 ${normalized}` : 'CIDR 边界有效') : `${mode === 'merge' ? '相邻和重叠网段已最小化' : mode === 'split' ? '拆分结果保持完整且无重叠' : '排除结果已转换为最少 CIDR'}；最多生成 4,096 个结果`)}</div>
+  </div>
 }
 
 export function Ipv6UlaPage() {
@@ -234,23 +262,28 @@ export function XmlJsonPage() {
 }
 
 function shellTokens(value: string) { return Array.from(value.matchAll(/"((?:\\.|[^"])*)"|'([^']*)'|([^\s]+)/g), (match) => match[1] ?? match[2] ?? match[3]) }
-function dockerCompose(value: string) {
+type DockerDiagnostic = { state: 'ok' | 'warning' | 'error'; label: string; detail: string }
+type DockerComposeResult = { output: string; serviceName: string; diagnostics: DockerDiagnostic[]; relationships: Array<[string, string]> }
+
+function dockerCompose(value: string): DockerComposeResult {
   const tokens = shellTokens(value)
   if (tokens[0] !== 'docker' || tokens[1] !== 'run') throw new Error('命令必须以 docker run 开头')
-  let name = 'app', image = ''; const ports: string[] = [], environment: string[] = [], volumes: string[] = []; let network = '', restart = ''; let command: string[] = []
+  let name = 'app', image = ''; const ports: string[] = [], environment: string[] = [], volumes: string[] = [], links: string[] = [], envFiles: string[] = []; let network = '', restart = ''; let command: string[] = []
   const take = (index: number, token: string) => { const equal = token.indexOf('='); return equal >= 0 ? { value: token.slice(equal + 1), next: index } : { value: tokens[index + 1] || '', next: index + 1 } }
   for (let index = 2; index < tokens.length; index += 1) {
     const token = tokens[index]
     if (token === '-d' || token === '--detach' || token === '--rm') continue
     const key = token.split('=')[0]
-    if (['--name', '-p', '--publish', '-e', '--env', '-v', '--volume', '--network', '--restart'].includes(key)) {
+    if (['--name', '-p', '--publish', '-e', '--env', '--env-file', '-v', '--volume', '--network', '--restart', '--link'].includes(key)) {
       const item = take(index, token); index = item.next
       if (!item.value) throw new Error(`${key} 缺少参数值`)
       if (key === '--name') name = item.value
       else if (key === '-p' || key === '--publish') ports.push(item.value)
       else if (key === '-e' || key === '--env') environment.push(item.value)
+      else if (key === '--env-file') envFiles.push(item.value)
       else if (key === '-v' || key === '--volume') volumes.push(item.value)
       else if (key === '--network') network = item.value
+      else if (key === '--link') links.push(item.value)
       else restart = item.value
       continue
     }
@@ -261,17 +294,60 @@ function dockerCompose(value: string) {
   const service: Record<string, unknown> = { image, container_name: name }
   if (ports.length) service.ports = ports
   if (environment.length) service.environment = environment
+  if (envFiles.length) service.env_file = envFiles
   if (volumes.length) service.volumes = volumes
   if (network) service.network_mode = network
+  if (links.length) service.links = links
   if (restart) service.restart = restart
   if (command.length) service.command = command
-  return stringifyYaml({ services: { [name]: service } }, { indent: 2, lineWidth: 0 })
+  const output = stringifyYaml({ services: { [name]: service } }, { indent: 2, lineWidth: 0 })
+  const diagnostics: DockerDiagnostic[] = []
+  diagnostics.push(/^[A-Za-z0-9][A-Za-z0-9_.-]*$/.test(name) ? { state: 'ok', label: 'service', detail: `服务名 ${name} 有效` } : { state: 'error', label: 'service', detail: `${name} 不是有效 Compose 服务名` })
+  try {
+    const parsed = parseYaml(output) as { services?: Record<string, Record<string, unknown>> }
+    const parsedService = parsed?.services?.[name]
+    diagnostics.push(parsedService && typeof parsedService.image === 'string' ? { state: 'ok', label: 'Compose', detail: 'YAML 结构与 services/image 字段有效' } : { state: 'error', label: 'Compose', detail: '缺少 services 或 image' })
+  } catch (cause) { diagnostics.push({ state: 'error', label: 'Compose', detail: dataError(cause, '生成的 YAML 无法解析') }) }
+  const restartPolicies = ['', 'no', 'always', 'on-failure', 'unless-stopped']
+  if (restart && !restartPolicies.includes(restart)) diagnostics.push({ state: 'error', label: 'restart', detail: `${restart} 不是常见 Compose 重启策略` })
+  else diagnostics.push({ state: 'ok', label: 'restart', detail: restart || '未设置，使用 Compose 默认策略' })
+  const portErrors = ports.filter((port) => {
+    const parts = port.replace(/\/(tcp|udp)$/i, '').split(':')
+    const numbers = parts.slice(parts.length > 1 ? -2 : -1).filter((part) => /^\d+$/.test(part)).map(Number)
+    return !numbers.length || numbers.some((portNumber) => portNumber < 1 || portNumber > 65535)
+  })
+  diagnostics.push(portErrors.length ? { state: 'error', label: 'ports', detail: `端口超出 1–65535 或格式无效：${portErrors.join(', ')}` } : { state: 'ok', label: 'ports', detail: ports.length ? `${ports.length} 个端口映射通过静态检查` : '未发布端口' })
+  const seenEnv = new Set<string>()
+  environment.forEach((entry) => {
+    const equal = entry.indexOf('=')
+    const key = equal < 0 ? entry : entry.slice(0, equal)
+    const envValue = equal < 0 ? '' : entry.slice(equal + 1)
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) diagnostics.push({ state: 'error', label: `env ${key || '空名称'}`, detail: '变量名应匹配 [A-Za-z_][A-Za-z0-9_]*' })
+    else if (seenEnv.has(key)) diagnostics.push({ state: 'warning', label: `env ${key}`, detail: '重复定义，后续值可能覆盖前值' })
+    else if (/(SECRET|TOKEN|PASSWORD|PASSWD|API_KEY|PRIVATE_KEY)/i.test(key) && envValue) diagnostics.push({ state: 'warning', label: `env ${key}`, detail: '疑似敏感值被内联到 Compose，建议改用 secrets 或本地 env_file' })
+    else if (/\$\{?[A-Za-z_]/.test(envValue)) diagnostics.push({ state: 'warning', label: `env ${key}`, detail: '值包含主机环境变量插值；本工具不会读取或展开它' })
+    else if (equal < 0 || !envValue) diagnostics.push({ state: 'warning', label: `env ${key}`, detail: equal < 0 ? '依赖运行时同名环境变量，静态检查无法确认值' : '值为空' })
+    else diagnostics.push({ state: 'ok', label: `env ${key}`, detail: '名称和值已识别' })
+    seenEnv.add(key)
+  })
+  envFiles.forEach((path) => diagnostics.push({ state: 'warning', label: 'env_file', detail: `${path} 仅作为本地路径保留，未读取文件内容` }))
+  links.forEach((link) => diagnostics.push({ state: 'warning', label: 'link', detail: `${link} 指向未在本次单服务转换中定义的服务，请在 Compose 中补充目标服务` }))
+  const relationships: Array<[string, string]> = [
+    ['镜像', `${name} → ${image}`],
+    ['网络', `${name} → ${network || 'default'}`],
+    ...ports.map((port) => ['端口', `${port} → ${name}`] as [string, string]),
+    ...volumes.map((volume) => ['存储', `${volume.split(':')[0]} → ${name}:${volume.split(':').slice(1).join(':') || '未指定容器路径'}`] as [string, string]),
+    ...links.map((link) => ['服务', `${name} → ${link}`] as [string, string]),
+  ]
+  return { output, serviceName: name, diagnostics, relationships }
 }
 export function DockerComposePage() {
   const [input, setInput] = useState('docker run -d --name web -p 8080:80 -e NODE_ENV=production -v ./data:/app/data --restart unless-stopped nginx:latest')
-  let output = '', error = ''
-  try { output = dockerCompose(input) } catch (cause) { error = dataError(cause, '无法解析 docker run 命令') }
-  return <><div className="dual-editor"><EditorPanel label="docker run" value={input} onChange={setInput} /><EditorPanel label={error ? '解析失败' : 'docker-compose.yml'} value={output} readOnly actions={<CopyButton value={output} />} emptyMessage={error || '输入 docker run 命令后实时转换'} /></div><div className={`status-line ${error ? 'error' : ''}`}>{error || '支持 name、端口、环境变量、卷、网络、重启策略和启动命令'}</div></>
+  let result: DockerComposeResult | null = null, error = ''
+  try { result = dockerCompose(input) } catch (cause) { error = dataError(cause, '无法解析 docker run 命令') }
+  const hasErrors = result?.diagnostics.some((item) => item.state === 'error')
+  const hasWarnings = result?.diagnostics.some((item) => item.state === 'warning')
+  return <div className="stacked-workspace docker-compose-tool"><div className="dual-editor"><EditorPanel label="docker run" value={input} onChange={setInput} language="bash" /><EditorPanel label={error ? '解析失败' : 'compose.yaml'} value={result?.output || ''} readOnly actions={<CopyButton value={result?.output || ''} />} language="yaml" emptyMessage={error || '输入 docker run 命令后实时转换'} /></div>{result && <div className="docker-analysis"><section><div className="panel-label"><span>服务关系 · {result.serviceName}</span><span>静态视图</span></div><div className="result-lines">{result.relationships.map(([label, detail], index) => <div key={`${label}-${index}`}><span>{label}</span><code>{detail}</code></div>)}</div></section><section><div className="panel-label"><span>Compose 与环境诊断</span><span>{result.diagnostics.filter((item) => item.state === 'error').length} errors · {result.diagnostics.filter((item) => item.state === 'warning').length} warnings</span></div><div className="docker-diagnostics">{result.diagnostics.map((item, index) => <div className={item.state} key={`${item.label}-${index}`}><strong>{item.label}</strong><span>{item.state === 'ok' ? '通过' : item.state === 'warning' ? '注意' : '错误'}</span><p>{item.detail}</p></div>)}</div></section></div>}<div className={`status-line ${error || hasErrors ? 'error' : hasWarnings ? 'warning' : ''}`}>{error || `已在浏览器内完成 Compose 静态校验；未连接 Docker，也未读取 env_file 或访问网络${hasWarnings ? ' · 请检查诊断项' : ''}`}</div></div>
 }
 
 export function CameraRecorderPage() {

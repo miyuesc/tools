@@ -292,8 +292,10 @@ const MAX_IMAGE_BYTES = 15 * 1024 * 1024
 
 async function decodeImage(file: File) {
   if ('createImageBitmap' in window) {
-    const bitmap = await createImageBitmap(file)
-    return { source: bitmap as CanvasImageSource, width: bitmap.width, height: bitmap.height, dispose: () => bitmap.close() }
+    try {
+      const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' })
+      return { source: bitmap as CanvasImageSource, width: bitmap.width, height: bitmap.height, dispose: () => bitmap.close() }
+    } catch { /* formats such as SVG may require the HTMLImageElement decoder */ }
   }
   const url = URL.createObjectURL(file)
   const image = new Image()
@@ -313,11 +315,17 @@ export function ImageBase64Page() {
   const [dataUrl, setDataUrl] = useState('')
   const [mode, setMode] = useState<'data-uri' | 'base64'>('data-uri')
   const [error, setError] = useState('')
+  const readerRef = useRef<FileReader | null>(null)
+  useEffect(() => () => { const reader = readerRef.current; if (reader) { reader.onload = null; reader.onerror = null; if (reader.readyState === FileReader.LOADING) reader.abort() } }, [])
   const onFile = (file: File) => {
     setName(file.name || '剪贴板图片'); setSize(file.size); setDataUrl(''); setError('')
+    const previous = readerRef.current
+    if (previous) { previous.onload = null; previous.onerror = null; if (previous.readyState === FileReader.LOADING) previous.abort() }
     const reader = new FileReader()
-    reader.onload = () => setDataUrl(String(reader.result))
-    reader.onerror = () => setError('读取图片失败，请重新选择文件')
+    readerRef.current = reader
+    reader.onload = () => { if (readerRef.current === reader) setDataUrl(String(reader.result)) }
+    reader.onerror = () => { if (readerRef.current === reader) setError('读取图片失败，请重新选择文件') }
+    reader.onloadend = () => { if (readerRef.current === reader) readerRef.current = null }
     reader.readAsDataURL(file)
   }
   const output = mode === 'data-uri' ? dataUrl : dataUrl.slice(dataUrl.indexOf(',') + 1)
@@ -325,57 +333,115 @@ export function ImageBase64Page() {
 }
 
 type ImageFormat = 'image/png' | 'image/jpeg' | 'image/webp'
+type ImageConvertOptions = { format: ImageFormat; quality: number; background: string; width: number; height: number; keepAspect: boolean }
+type ConvertedImage = { file: File; url: string; blob: Blob; width: number; height: number; name: string; error?: string }
+
+function convertedDimensions(sourceWidth: number, sourceHeight: number, width: number, height: number, keepAspect: boolean) {
+  if (!width && !height) return { width: sourceWidth, height: sourceHeight }
+  if (!keepAspect) return { width: width || sourceWidth, height: height || sourceHeight }
+  if (width && height) { const scale = Math.min(width / sourceWidth, height / sourceHeight); return { width: Math.max(1, Math.round(sourceWidth * scale)), height: Math.max(1, Math.round(sourceHeight * scale)) } }
+  if (width) return { width, height: Math.max(1, Math.round(sourceHeight * width / sourceWidth)) }
+  return { width: Math.max(1, Math.round(sourceWidth * height / sourceHeight)), height }
+}
+
+async function convertImageOnMain(file: File, options: ImageConvertOptions) {
+  const decoded = await decodeImage(file)
+  const size = convertedDimensions(decoded.width, decoded.height, options.width, options.height, options.keepAspect)
+  if (size.width > 16384 || size.height > 16384 || size.width * size.height > 100_000_000) { decoded.dispose(); throw new Error('输出尺寸超过 16,384 像素边长或 1 亿像素安全上限') }
+  const canvas = document.createElement('canvas'); canvas.width = size.width; canvas.height = size.height
+  try {
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('浏览器无法创建图片画布')
+    if (options.format === 'image/jpeg') { context.fillStyle = options.background; context.fillRect(0, 0, size.width, size.height) }
+    context.drawImage(decoded.source, 0, 0, size.width, size.height)
+  } finally { decoded.dispose() }
+  return { blob: await canvasToBlob(canvas, options.format, options.format === 'image/png' ? undefined : options.quality), ...size }
+}
+
+function convertImageInWorker(worker: Worker, file: File, options: ImageConvertOptions) {
+  return new Promise<{ blob: Blob; width: number; height: number }>((resolve, reject) => {
+    worker.onmessage = (event: MessageEvent<{ ok: boolean; blob?: Blob; width?: number; height?: number; error?: string }>) => {
+      if (event.data.ok && event.data.blob && event.data.width && event.data.height) resolve({ blob: event.data.blob, width: event.data.width, height: event.data.height })
+      else reject(new Error(event.data.error || '图片 Worker 转换失败'))
+    }
+    worker.onerror = () => reject(new Error('图片 Worker 无法运行'))
+    worker.postMessage({ file, ...options })
+  })
+}
 
 export function ImageConverterPage() {
-  const [file, setFile] = useState<File | null>(null)
-  const [source, setSource] = useState('')
+  const [files, setFiles] = useState<File[]>([])
   const [format, setFormat] = useState<ImageFormat>('image/webp')
   const [quality, setQuality] = useState(0.82)
   const [background, setBackground] = useState('#ffffff')
-  const [details, setDetails] = useState('')
-  const [appliedFormat, setAppliedFormat] = useState<ImageFormat>('image/webp')
+  const [width, setWidth] = useState('')
+  const [height, setHeight] = useState('')
+  const [keepAspect, setKeepAspect] = useState(true)
+  const [results, setResults] = useState<ConvertedImage[]>([])
+  const [selected, setSelected] = useState(0)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const outputUrlRef = useRef('')
+  const outputUrlsRef = useRef<string[]>([])
+  const workerRef = useRef<Worker | null>(null)
   const conversionIdRef = useRef(0)
-  useEffect(() => () => { conversionIdRef.current += 1; if (outputUrlRef.current) URL.revokeObjectURL(outputUrlRef.current) }, [])
-  const convert = useCallback(async (inputFile: File, outputFormat: ImageFormat, outputQuality: number, jpegBackground: string, conversionId: number) => {
-    try {
-      const decoded = await decodeImage(inputFile)
-      const canvas = document.createElement('canvas'); canvas.width = decoded.width; canvas.height = decoded.height
+  const releaseOutputs = useCallback(() => { outputUrlsRef.current.forEach((url) => URL.revokeObjectURL(url)); outputUrlsRef.current = [] }, [])
+  useEffect(() => () => { conversionIdRef.current += 1; workerRef.current?.terminate(); releaseOutputs() }, [releaseOutputs])
+
+  const convert = useCallback(async (inputFiles: File[], options: ImageConvertOptions, conversionId: number) => {
+    workerRef.current?.terminate()
+    let worker: Worker | null = null
+    if (typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
+      try { worker = new Worker(new URL('./image-converter.worker.ts', import.meta.url), { type: 'module' }); workerRef.current = worker }
+      catch { worker = null }
+    }
+    const next: ConvertedImage[] = []
+    for (const file of inputFiles) {
       try {
-        const context = canvas.getContext('2d')
-        if (!context) throw new Error('浏览器无法创建图片画布')
-        if (outputFormat === 'image/jpeg') { context.fillStyle = jpegBackground; context.fillRect(0, 0, canvas.width, canvas.height) }
-        context.drawImage(decoded.source, 0, 0)
-      } finally { decoded.dispose() }
-      const blob = await canvasToBlob(canvas, outputFormat, outputFormat === 'image/png' ? undefined : outputQuality)
-      if (conversionId !== conversionIdRef.current) return
-      if (outputUrlRef.current) URL.revokeObjectURL(outputUrlRef.current)
-      const nextUrl = URL.createObjectURL(blob); outputUrlRef.current = nextUrl; setSource(nextUrl)
-      setAppliedFormat(outputFormat)
-      setDetails(`${decoded.width}×${decoded.height} · ${formatBytes(inputFile.size)} → ${formatBytes(blob.size)}`)
-    } catch (cause) {
-      if (conversionId !== conversionIdRef.current) return
-      if (outputUrlRef.current) URL.revokeObjectURL(outputUrlRef.current)
-      outputUrlRef.current = ''; setError(cause instanceof Error ? cause.message : '图片转换失败'); setSource(''); setDetails('')
-    } finally { if (conversionId === conversionIdRef.current) setBusy(false) }
+        let converted
+        try { converted = worker ? await convertImageInWorker(worker, file, options) : await convertImageOnMain(file, options) }
+        catch { converted = await convertImageOnMain(file, options) }
+        if (conversionId !== conversionIdRef.current) break
+        const extension = options.format === 'image/jpeg' ? 'jpg' : options.format.split('/')[1]
+        const name = `${file.name.replace(/\.[^.]+$/, '') || 'converted'}.${extension}`
+        const url = URL.createObjectURL(converted.blob)
+        outputUrlsRef.current.push(url)
+        next.push({ file, url, name, ...converted })
+      } catch (cause) { next.push({ file, url: '', blob: new Blob(), width: 0, height: 0, name: file.name, error: cause instanceof Error ? cause.message : '转换失败' }) }
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    }
+    worker?.terminate()
+    if (workerRef.current === worker) workerRef.current = null
+    if (conversionId !== conversionIdRef.current) { next.forEach((item) => { if (item.url) URL.revokeObjectURL(item.url) }); return }
+    setResults(next); setSelected(0); setBusy(false)
+    const failures = next.filter((item) => item.error).length
+    setError(failures ? `${failures} 个文件转换失败，请查看结果列表` : '')
   }, [])
   useEffect(() => {
-    if (!file) return
+    if (!files.length) return
     const conversionId = ++conversionIdRef.current
-    setBusy(true); setError('')
-    const timer = window.setTimeout(() => void convert(file, format, quality, background, conversionId), 120)
+    workerRef.current?.terminate(); releaseOutputs(); setResults([]); setBusy(true); setError('')
+    const parsedWidth = Math.max(0, Number(width) || 0), parsedHeight = Math.max(0, Number(height) || 0)
+    const timer = window.setTimeout(() => void convert(files, { format, quality, background, width: parsedWidth, height: parsedHeight, keepAspect }, conversionId), 150)
     return () => window.clearTimeout(timer)
-  }, [background, convert, file, format, quality])
-  const handleFile = (inputFile: File) => {
-    conversionIdRef.current += 1
-    if (outputUrlRef.current) URL.revokeObjectURL(outputUrlRef.current)
-    outputUrlRef.current = ''; setSource(''); setDetails(''); setFile(inputFile); setError('')
-  }
-  const extension = appliedFormat === 'image/jpeg' ? 'jpg' : appliedFormat.split('/')[1]
-  const downloadReady = Boolean(source) && !busy && !error && appliedFormat === format
-  return <div className="image-tool-layout image-converter-layout"><div className="converter-options converter-options-top"><label>输出格式<select value={format} onChange={(event) => setFormat(event.target.value as ImageFormat)}><option value="image/webp">WebP</option><option value="image/jpeg">JPEG</option><option value="image/png">PNG</option></select></label><label>质量 <input type="range" min="0.2" max="1" step="0.01" value={quality} disabled={format === 'image/png'} onChange={(event) => setQuality(Number(event.target.value))} /><code>{format === 'image/png' ? '无损' : `${Math.round(quality * 100)}%`}</code></label>{format === 'image/jpeg' && <label>透明背景<input type="color" value={background} onChange={(event) => setBackground(event.target.value)} /></label>}{downloadReady ? <a className="converter-download" href={source} download={`converted.${extension}`}><Download size={15} />下载 {extension.toUpperCase()}</a> : <button disabled><Download size={15} />{busy ? '预览更新中…' : error ? '转换失败' : '等待图片'}</button>}</div><FileDropZone accept="image/*" maxBytes={MAX_IMAGE_BYTES} title={file?.name || '选择、拖入或粘贴图片'} detail={file ? `${file.type || '未知格式'} · ${formatBytes(file.size)}` : `PNG / JPEG / WebP · 最大 ${formatBytes(MAX_IMAGE_BYTES)}`} icon={<FileImage size={24} />} enablePaste onFile={handleFile} onError={setError} />{source && <div className="image-preview"><img src={source} alt="转换结果" /></div>}<div className={`status-line ${error ? 'error' : ''}`}>{error || (busy ? '正在根据设置自动更新预览…' : details) || '导入图片后，格式、质量和 JPEG 背景调整会自动更新预览'}</div></div>
+  }, [background, convert, files, format, height, keepAspect, quality, releaseOutputs, width])
+  const handleFiles = useCallback((inputFiles: File[]) => {
+    const limited = inputFiles.slice(0, 20)
+    const total = limited.reduce((sum, file) => sum + file.size, 0)
+    if (total > 120 * 1024 * 1024) { setError(`批次总大小 ${formatBytes(total)}，超过 120 MB 上限`); return }
+    setFiles(limited); setError(inputFiles.length > limited.length ? '一次最多处理 20 个文件，已忽略其余文件' : '')
+  }, [])
+  const handleFile = useCallback((inputFile: File) => handleFiles([inputFile]), [handleFiles])
+  const current = results[selected]
+  const successful = results.filter((item) => !item.error)
+  const metadataSummary = successful.length ? `已清除 ${successful.length} 个输出文件的 EXIF / IPTC / XMP 与其他源元数据` : ''
+  return <div className="image-tool-layout image-converter-layout">
+    <div className="converter-options converter-options-top"><label>输出格式<select value={format} onChange={(event) => setFormat(event.target.value as ImageFormat)}><option value="image/webp">WebP</option><option value="image/jpeg">JPEG</option><option value="image/png">PNG</option></select></label><label>质量 <input type="range" min="0.2" max="1" step="0.01" value={quality} disabled={format === 'image/png'} onChange={(event) => setQuality(Number(event.target.value))} /><code>{format === 'image/png' ? '无损' : `${Math.round(quality * 100)}%`}</code></label>{format === 'image/jpeg' && <label>透明背景<input type="color" value={background} onChange={(event) => setBackground(event.target.value)} /></label>}<label className="metadata-lock"><input type="checkbox" checked readOnly />清除元数据（始终）</label></div>
+    <div className="converter-options image-resize-options"><label>宽度<input type="number" min="1" max="16384" value={width} onChange={(event) => setWidth(event.target.value)} placeholder="原宽" /></label><label>高度<input type="number" min="1" max="16384" value={height} onChange={(event) => setHeight(event.target.value)} placeholder="原高" /></label><label><input type="checkbox" checked={keepAspect} onChange={(event) => setKeepAspect(event.target.checked)} />保持比例</label><span className="file-summary">留空保持原尺寸；同时填写时按边界框缩放</span></div>
+    <FileDropZone accept="image/*" maxBytes={MAX_IMAGE_BYTES} title={files.length ? `${files.length} 个待处理文件` : '选择或拖入一批图片'} detail={files.length ? `${formatBytes(files.reduce((sum, file) => sum + file.size, 0))} · 最多 20 个文件` : `PNG / JPEG / WebP 等 · 单文件最大 ${formatBytes(MAX_IMAGE_BYTES)}`} icon={<FileImage size={24} />} enablePaste multiple onFile={handleFile} onFiles={handleFiles} onError={setError} />
+    {current?.url ? <div className="image-preview"><img src={current.url} alt={`${current.name} 转换结果`} /></div> : <div className="image-preview image-preview-empty"><span>{busy ? '正在本地转换…' : '转换结果预览'}</span></div>}
+    <div className="image-batch-results"><div className="panel-label"><span>批量结果</span><span>{busy ? '处理中…' : `${successful.length} / ${results.length || files.length} 完成`}</span></div>{results.map((item, index) => <div className={`${selected === index ? 'selected' : ''} ${item.error ? 'error' : ''}`} key={`${item.file.name}-${index}`}><button onClick={() => setSelected(index)}><strong>{item.name}</strong><span>{item.error || `${item.width}×${item.height} · ${formatBytes(item.file.size)} → ${formatBytes(item.blob.size)}`}</span><small>{item.error ? '未输出' : '元数据已移除'}</small></button>{item.url && <a href={item.url} download={item.name}><Download size={14} />下载</a>}</div>)}</div>
+    <div className={`status-line ${error ? 'error' : busy ? 'warning' : ''}`}>{error || (busy ? `正在浏览器${typeof OffscreenCanvas !== 'undefined' ? ' Worker' : '主线程'}中逐个处理，页面仍可响应…` : metadataSummary || '所有文件仅在浏览器本地解码和重编码；输出不会复制 EXIF、IPTC、XMP 或 GPS 元数据')}</div>
+  </div>
 }
 
 export function FaviconGeneratorPage() {
@@ -393,10 +459,76 @@ export function FaviconGeneratorPage() {
   return <div className="image-tool-layout"><FileDropZone accept="image/*" maxBytes={MAX_IMAGE_BYTES} title={file?.name || '选择图片或拖入文件'} detail={file ? `${formatBytes(file.size)} · 当前输出 ${size}×${size}` : `输出多尺寸 PNG 图标 · 最大 ${formatBytes(MAX_IMAGE_BYTES)}`} icon={<Sparkles size={24} />} onFile={handleFile} onError={setError} />{source && <div className="image-preview favicon-preview"><img src={source} alt={`${size}×${size} favicon`} /></div>}<div className="converter-options favicon-sizes"><span>输出尺寸</span>{[16, 32, 64, 128, 256].map((value) => <button key={value} className={size === value ? 'selected' : ''} onClick={() => { setSize(value); if (file) void generate(file, value) }}>{value}</button>)}{source && <a className="favicon-download" href={source} download={`favicon-${size}.png`}><Download size={15} />下载 {size}×{size} PNG</a>}</div><EditorPanel label="HTML" value={source ? snippet : ''} readOnly actions={<CopyButton value={source ? snippet : ''} />} emptyMessage={error || '生成后显示 link 标签'} language="markup" /><div className={`status-line ${error ? 'error' : ''}`}>{error || (source ? '透明背景会保留；可切换尺寸后分别下载' : '建议使用正方形透明 PNG 或 SVG 源图')}</div></div>
 }
 
+type SvgOptimizeOptions = { comments: boolean; whitespace: boolean; attributes: boolean; colors: boolean }
+type SvgOptimizeResult = { output: string; error: string; changes: Array<[string, number]> }
+
+function compactSvgColor(value: string) {
+  const hex = value.match(/^#([\da-f]{6})$/i)?.[1]?.toLowerCase()
+  if (hex) return hex[0] === hex[1] && hex[2] === hex[3] && hex[4] === hex[5] ? `#${hex[0]}${hex[2]}${hex[4]}` : `#${hex}`
+  const rgb = value.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i)
+  if (!rgb) return value
+  const channels = rgb.slice(1).map(Number)
+  if (channels.some((channel) => channel > 255)) return value
+  return compactSvgColor(`#${channels.map((channel) => channel.toString(16).padStart(2, '0')).join('')}`)
+}
+
+function optimizeSvg(input: string, options: SvgOptimizeOptions): SvgOptimizeResult {
+  if (!input.trim()) return { output: '', error: '请输入 SVG 内容', changes: [] }
+  const documentValue = new DOMParser().parseFromString(input, 'image/svg+xml')
+  const parserError = documentValue.querySelector('parsererror')
+  if (parserError || documentValue.documentElement.tagName.toLowerCase() !== 'svg') return { output: '', error: parserError?.textContent?.split('\n')[0] || '根节点必须是 <svg>', changes: [] }
+  const counts = { comments: 0, whitespace: 0, attributes: 0, colors: 0 }
+  const textSensitive = new Set(['text', 'tspan', 'textpath', 'style', 'script', 'title', 'desc'])
+  const colorAttributes = new Set(['fill', 'stroke', 'color', 'flood-color', 'lighting-color', 'stop-color'])
+  const visit = (node: Node) => {
+    Array.from(node.childNodes).forEach((child) => {
+      if (child.nodeType === Node.COMMENT_NODE && options.comments) { child.remove(); counts.comments += 1; return }
+      if (child.nodeType === Node.TEXT_NODE && options.whitespace && /^\s+$/.test(child.nodeValue || '') && child.parentElement && !textSensitive.has(child.parentElement.localName.toLowerCase())) { child.remove(); counts.whitespace += 1; return }
+      if (child.nodeType === Node.ELEMENT_NODE) {
+        const element = child as Element
+        if (options.colors) Array.from(element.attributes).forEach((attribute) => {
+          if (!colorAttributes.has(attribute.name.toLowerCase())) return
+          const compact = compactSvgColor(attribute.value)
+          if (compact !== attribute.value) { element.setAttribute(attribute.name, compact); counts.colors += 1 }
+        })
+        if (options.attributes && element.attributes.length > 1) {
+          const priority = ['xmlns', 'viewBox', 'width', 'height', 'id', 'class']
+          const sorted = Array.from(element.attributes).sort((left, right) => {
+            const leftIndex = priority.indexOf(left.name), rightIndex = priority.indexOf(right.name)
+            if (leftIndex >= 0 || rightIndex >= 0) return (leftIndex < 0 ? priority.length : leftIndex) - (rightIndex < 0 ? priority.length : rightIndex)
+            return left.name.localeCompare(right.name)
+          })
+          if (sorted.some((attribute, index) => attribute.name !== element.attributes[index]?.name)) {
+            sorted.forEach((attribute) => element.removeAttributeNode(attribute))
+            sorted.forEach((attribute) => element.setAttributeNS(attribute.namespaceURI, attribute.name, attribute.value))
+            counts.attributes += 1
+          }
+        }
+        visit(child)
+      }
+    })
+  }
+  visit(documentValue.documentElement)
+  let output = new XMLSerializer().serializeToString(documentValue.documentElement)
+  if (options.whitespace) output = output.replace(/>\s+</g, '><').trim()
+  return { output, error: '', changes: [['移除注释', counts.comments], ['清理节点空白', counts.whitespace], ['整理属性顺序', counts.attributes], ['安全压缩颜色', counts.colors]] }
+}
+
 export function SvgOptimizerPage() {
-  const [input, setInput] = useState('<svg width="100" height="100">\n  <!-- comment -->\n  <circle cx="50" cy="50" r="40" fill="#b8f35d" />\n</svg>')
-  const output = input.replace(/<!--[\s\S]*?-->/g, '').replace(/>\s+</g, '><').replace(/\s{2,}/g, ' ').trim()
-  return <div className="dual-editor"><EditorPanel label="SVG" value={input} onChange={setInput} /><EditorPanel label={`优化结果 · ${new Blob([output]).size} bytes`} value={output} readOnly actions={<CopyButton value={output} />} /></div>
+  const [input, setInput] = useState('<svg viewBox="0 0 100 100" width="100" height="100" xmlns="http://www.w3.org/2000/svg">\n  <!-- decorative circle -->\n  <circle stroke="#FFFFFF" fill="rgb(187, 243, 93)" r="40" cy="50" cx="50" />\n  <text x="50" y="54" text-anchor="middle"> Lumen </text>\n</svg>')
+  const [options, setOptions] = useState<SvgOptimizeOptions>({ comments: true, whitespace: true, attributes: true, colors: true })
+  const result = useMemo(() => optimizeSvg(input, options), [input, options])
+  const beforeBytes = new Blob([input]).size
+  const afterBytes = new Blob([result.output]).size
+  const saved = Math.max(0, beforeBytes - afterBytes)
+  const percent = beforeBytes ? saved / beforeBytes * 100 : 0
+  const toggle = (key: keyof SvgOptimizeOptions) => setOptions((value) => ({ ...value, [key]: !value[key] }))
+  return <div className="stacked-workspace svg-optimizer-tool">
+    <div className="workspace-toolbar"><label className="toolbar-check"><input type="checkbox" checked={options.comments} onChange={() => toggle('comments')} />移除注释</label><label className="toolbar-check"><input type="checkbox" checked={options.whitespace} onChange={() => toggle('whitespace')} />清理节点空白</label><label className="toolbar-check"><input type="checkbox" checked={options.attributes} onChange={() => toggle('attributes')} />整理属性</label><label className="toolbar-check"><input type="checkbox" checked={options.colors} onChange={() => toggle('colors')} />安全压缩颜色</label><span className="toolbar-hint">不改写 path、ID、ARIA、文本内容或变换</span></div>
+    <div className="dual-editor"><EditorPanel label="原始 SVG" value={input} onChange={setInput} language="markup" /><EditorPanel label={result.error ? '优化失败' : '优化结果'} value={result.output} readOnly actions={<CopyButton value={result.output} />} language="markup" emptyMessage={result.error || '输入 SVG 后生成结果'} /></div>
+    <div className="svg-optimization-summary"><div><span>优化前</span><strong>{formatBytes(beforeBytes)}</strong></div><div><span>优化后</span><strong>{result.error ? '—' : formatBytes(afterBytes)}</strong></div><div><span>减少</span><strong>{result.error ? '—' : `${formatBytes(saved)} · ${percent.toFixed(1)}%`}</strong></div>{result.changes.map(([label, count]) => <div key={label}><span>{label}</span><strong>{count}</strong></div>)}</div>
+    <div className={`status-line ${result.error ? 'error' : ''}`}>{result.error || '差异仅来自所列安全变更；颜色只处理等价的 HEX / 整数 RGB，文本节点内的空白保持不变'}</div>
+  </div>
 }
 
 function curlToJavascript(input: string) {

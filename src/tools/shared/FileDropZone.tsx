@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState, type DragEvent, type ReactNode } from 'react'
 import { formatBytes } from './fileUtils'
 
-export function FileDropZone({ accept, maxBytes, title, detail, icon, enablePaste = false, onFile, onError }: {
+export function FileDropZone({ accept, maxBytes, title, detail, icon, enablePaste = false, multiple = false, onFile, onFiles, onError }: {
   accept?: string
   maxBytes: number
   title: string
   detail: string
   icon?: ReactNode
   enablePaste?: boolean
+  multiple?: boolean
   onFile: (file: File) => void
+  onFiles?: (files: File[]) => void
   onError: (message: string) => void
 }) {
   const [dragging, setDragging] = useState(false)
@@ -21,6 +23,20 @@ export function FileDropZone({ accept, maxBytes, title, detail, icon, enablePast
     onError('')
     onFile(file)
   }, [accept, maxBytes, onError, onFile])
+
+  const acceptFiles = useCallback((input?: FileList | File[]) => {
+    const files = Array.from(input || [])
+    if (!multiple || !onFiles) { acceptFile(files[0]); return }
+    setDragging(false)
+    const valid = files.filter((file) => {
+      if (file.size > maxBytes) return false
+      if (accept === 'image/*' && !file.type.startsWith('image/')) return false
+      return true
+    })
+    if (valid.length !== files.length) onError(`${files.length - valid.length} 个文件因格式不支持或超过 ${formatBytes(maxBytes)} 被跳过`)
+    else onError('')
+    if (valid.length) onFiles(valid)
+  }, [accept, acceptFile, maxBytes, multiple, onError, onFiles])
 
   useEffect(() => {
     if (!enablePaste) return
@@ -37,13 +53,13 @@ export function FileDropZone({ accept, maxBytes, title, detail, icon, enablePast
 
   const drop = (event: DragEvent<HTMLLabelElement>) => {
     event.preventDefault()
-    acceptFile(event.dataTransfer.files[0])
+    acceptFiles(event.dataTransfer.files)
   }
 
   return <label className={`upload-drop ${dragging ? 'is-dragging' : ''}`} onDragEnter={(event) => { event.preventDefault(); setDragging(true) }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={drop}>
     {icon}
     <strong>{title}</strong>
     <span>{detail}{enablePaste ? ' · Ctrl/⌘V 粘贴图片' : ''}</span>
-    <input type="file" accept={accept} onClick={(event) => { event.currentTarget.value = '' }} onChange={(event) => acceptFile(event.currentTarget.files?.[0])} />
+    <input type="file" accept={accept} multiple={multiple} onClick={(event) => { event.currentTarget.value = '' }} onChange={(event) => acceptFiles(event.currentTarget.files || undefined)} />
   </label>
 }

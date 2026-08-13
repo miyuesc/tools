@@ -113,6 +113,18 @@ const {
 )
 
 const {
+  CssCascadePage,
+  DependencyTreePage,
+  GoBenchmarkPage,
+  GoModGraphPage,
+  JavaThreadDumpPage,
+  PackageExportsPage,
+} = createLazyPages(
+  () => import('./text-analysis'),
+  ['CssCascadePage', 'DependencyTreePage', 'GoBenchmarkPage', 'GoModGraphPage', 'JavaThreadDumpPage', 'PackageExportsPage'] as const,
+)
+
+const {
   Base64FilePage,
   BasicAuthPage,
   ChronometerPage,
@@ -211,6 +223,12 @@ const {
 )
 
 const rawTools: Array<Omit<ToolDefinition, 'category'> & { category: string }> = [
+  { id: 'go-benchmark-compare', name: 'Go Benchmark 对比', description: '对齐两组 go test -bench 输出并比较耗时、内存与分配变化', category: 'Go', icon: ArrowLeftRight, tags: ['go', 'golang', 'benchmark', 'benchstat', 'ns/op', 'B/op', 'allocs/op', '性能', '对比'], accent: '#5dd6e8', component: GoBenchmarkPage, fullPage: true },
+  { id: 'package-exports', name: 'package exports 解析器', description: '本地模拟 exports、imports、条件导出、子路径与 fallback 匹配', category: 'Node.js', icon: FileJson, tags: ['node', 'npm', 'package.json', 'exports', 'imports', 'conditions', 'subpath', 'fallback', '解析'], accent: '#cb3837', component: PackageExportsPage, fullPage: true },
+  { id: 'dependency-tree', name: 'Maven / Gradle 依赖树分析', description: '解析依赖层级、版本冲突、省略节点与 scope / configuration 统计', category: 'Java', icon: ListTree, tags: ['java', 'maven', 'gradle', 'dependency tree', 'dependencies', 'conflict', 'scope', 'configuration'], accent: '#ff9f68', component: DependencyTreePage, fullPage: true },
+  { id: 'go-mod-graph', name: 'go.mod 依赖图', description: '解析模块声明、依赖、替换、排除、撤回与 indirect 关系', category: 'Go', icon: Network, tags: ['go', 'golang', 'go.mod', 'module', 'require', 'replace', 'exclude', 'retract', 'indirect'], accent: '#59d4e8', component: GoModGraphPage, fullPage: true },
+  { id: 'java-thread-dump', name: 'Java Thread Dump 分析', description: '统计线程状态、聚合堆栈、关联锁并启发式检测死锁', category: 'Java', icon: FileDiff, tags: ['java', 'thread dump', 'jstack', 'deadlock', 'lock', 'stack', '线程', '死锁'], accent: '#f59e42', component: JavaThreadDumpPage, fullPage: true },
+  { id: 'css-specificity-cascade', name: 'CSS Specificity / Cascade 分析', description: '计算选择器权重并检查 !important、重复声明与潜在覆盖', category: 'CSS 设计', icon: Palette, tags: ['css', 'specificity', 'cascade', 'selector', 'important', 'override', '选择器', '优先级'], accent: '#b8f35d', component: CssCascadePage, fullPage: true },
   { id: 'code-formatter', name: 'JS / TS / JSX / CSS 格式化器', description: '使用本地 Prettier 格式化 JavaScript、TypeScript、JSX、TSX 与 CSS', category: '语言', icon: FileCode2, tags: ['javascript', 'typescript', 'jsx', 'tsx', 'css', 'prettier', '格式化'], accent: '#f7df1e', component: CodeFormatterPage, featured: true },
   { id: 'json-java', name: 'JSON 转 Java', description: '从 JSON 推断并生成 Record、POJO 或 Lombok 数据模型', category: '语言', icon: Braces, tags: ['java', 'json', 'record', 'pojo', 'lombok', 'jackson'], accent: '#f59e42', component: JsonToJavaPage },
   { id: 'json-go', name: 'JSON 转 Go Struct', description: '从 JSON 生成嵌套 Struct、字段标签、指针与 time.Time', category: '语言', icon: Braces, tags: ['go', 'golang', 'json', 'struct', 'tag'], accent: '#59d4e8', component: JsonToGoPage },
@@ -326,10 +344,10 @@ const rawTools: Array<Omit<ToolDefinition, 'category'> & { category: string }> =
 
 const categoryAssignments = {
   JavaScript: ['code-formatter', 'json-types', 'curl-to-code', 'benchmark'],
-  'Node.js': ['package-json', 'semver'],
-  Java: ['json-java', 'java-stack-trace'],
-  Go: ['json-go', 'go-goroutine-dump'],
-  'CSS 设计': ['fluid-type', 'eased-gradient', 'shape-outside', 'button-state', 'box-shadow', 'text-shadow', 'border-radius', 'css-layout', 'css-transform-filter', 'keyframes-bezier', 'wcag-contrast', 'color'],
+  'Node.js': ['package-json', 'package-exports', 'semver'],
+  Java: ['json-java', 'java-stack-trace', 'java-thread-dump', 'dependency-tree'],
+  Go: ['json-go', 'go-goroutine-dump', 'go-benchmark-compare', 'go-mod-graph'],
+  'CSS 设计': ['fluid-type', 'eased-gradient', 'shape-outside', 'button-state', 'box-shadow', 'text-shadow', 'border-radius', 'css-layout', 'css-transform-filter', 'keyframes-bezier', 'wcag-contrast', 'css-specificity-cascade', 'color'],
   'SVG 图形': ['hud-frame', 'svg-path-editor', 'svg-optimizer', 'svg-placeholder', 'svg-sprite', 'mermaid'],
   图片媒体: ['image-studio', 'image-base64', 'image-converter', 'favicon', 'qr-code', 'camera-recorder'],
   数据格式: ['json', 'json-minify', 'json-diff', 'html', 'xml', 'sql', 'json-csv', 'json-xml', 'xml-json', 'json-yaml', 'yaml-json', 'yaml-viewer', 'json-toml', 'toml-json', 'toml-yaml'],

@@ -14,7 +14,6 @@ export default function ToolPageLayout({ tool, favorite, onFavorite, onBack }: {
   const Icon = tool.icon
   const ToolComponent = tool.component
   const isWebWorkspace = tool.workspaceClassName?.split(/\s+/).includes('web-workspace')
-  const useWorkspaceViewbar = !tool.fullPage || isWebWorkspace
 
   useLayoutEffect(() => {
     setFullPage(false)
@@ -59,13 +58,10 @@ export default function ToolPageLayout({ tool, favorite, onFavorite, onBack }: {
         </div>
       </div>
       <div ref={workspaceRef} className={`workspace ${supportsFullPage ? 'supports-fullpage' : ''} ${tool.workspaceClassName || ''}`}>
-        {supportsFullPage && (!useWorkspaceViewbar ? <button className="fullpage-toggle" onClick={() => setFullPage((value) => !value)} title={fullPage ? '退出全网页模式（Esc）' : '全网页打开'}>
-          {fullPage ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-          <span>{fullPage ? '退出全屏' : '全网页'}</span>
-        </button> : <div className="workspace-viewbar"><button className="workspace-fullpage-toggle" onClick={() => setFullPage((value) => !value)} title={fullPage ? '退出全网页模式（Esc）' : '全网页打开'}>
+        {supportsFullPage && <div className="workspace-viewbar"><button className="workspace-fullpage-toggle" onClick={() => setFullPage((value) => !value)} title={fullPage ? '退出全网页模式（Esc）' : '全网页打开'}>
           {fullPage ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
           <span>{fullPage ? '退出全屏' : '全网页'}</span>
-        </button></div>)}
+        </button></div>}
         <Suspense fallback={<div className="tool-loading" role="status" aria-live="polite">
           <span className="tool-loading-mark" />
           <div><strong>正在载入工具</strong><small>仅加载当前工具所需代码…</small></div>
